@@ -1,0 +1,359 @@
+version: "3"
+services:
+  postgres:
+    container_name: postgres
+    image: debezium/postgres
+    hostname: postgres
+    restart: always
+    ports:
+      - 5433:5432
+    environment:
+      - POSTGRES_PASSWORD=mysecretpassword
+    command:
+      - bash
+      - -c
+      - |
+        docker-entrypoint.sh -c 'shared_buffers=256MB' -c 'max_connections=200' -c 'wal_level=logical' -c 'max_wal_senders=5' -c 'max_replication_slots=1' -c 'log_statement=all' -c 'log_destination=stderr' -c 'log_statement=all' &
+        apt-get update
+        apt-get install -y wget unzip
+        wget https://jlaw-public.s3-ap-southeast-1.amazonaws.com/demos/confluent-dataiku-fraud-demo/sql/sql.zip
+        unzip sql.zip
+        PGPASSWORD=mysecretpassword
+        sleep 10
+        psql -U postgres -f init.sql
+        psql -U postgres -f merchants.sql
+        psql -U postgres -f cardholders.sql
+        psql -U postgres -f transactions_known.sql
+        psql -U postgres -f transactions_unknown.sql
+        sleep infinity
+
+  mongo:
+    container_name: mongo
+    image: mongo
+    hostname: mongo
+    restart: always
+    ports:
+      - 27017:27017
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+
+  mongo-express:
+    container_name: mongo-express
+    image: mongo-express
+    restart: always
+    ports:
+      - 8084:8081
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: root
+      ME_CONFIG_MONGODB_ADMINPASSWORD: example
+
+  dataiku-dss:
+    container_name: dataiku-dss
+    image: dataiku/dss:8.0.2
+    hostname: dataiku-dss
+    restart: always
+    ports:
+      - 10000:10000
+    command:
+      - bash
+      - -c
+      - |
+        curl -o /home/dataiku/dss.zip https://jlaw-public.s3-ap-southeast-1.amazonaws.com/demos/confluent-dataiku-fraud-demo/dss.zip
+        cd /home/dataiku
+        unzip dss.zip
+        /home/dataiku/dataiku-dss-8.0.2/installer.sh -d /home/dataiku/dss -u -y
+        /home/dataiku/dss/bin/dssadmin install-R-integration
+        exec /home/dataiku/dss/bin/dss run &
+        sleep infinity
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:6.0.1
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  broker:
+    image: confluentinc/cp-server:6.0.1
+    hostname: broker
+    container_name: broker
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_CONFLUENT_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: broker:29092
+      CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
+      CONFLUENT_METRICS_ENABLE: 'true'
+      CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:6.0.1
+    hostname: schema-registry
+    container_name: schema-registry
+    depends_on:
+      - broker
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'broker:29092'
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+
+  connect:
+    image: confluentinc/cp-kafka-connect:6.0.1
+    hostname: connect
+    container_name: connect
+    depends_on:
+      - broker
+      - schema-registry
+      - postgres
+      - mongo
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: 'broker:29092'
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: compose-connect-group
+      CONNECT_CONFIG_STORAGE_TOPIC: docker-connect-configs
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_FLUSH_INTERVAL_MS: 10000
+      CONNECT_OFFSET_STORAGE_TOPIC: docker-connect-offsets
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_TOPIC: docker-connect-status
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      # CLASSPATH required due to CC-2422
+      CLASSPATH: /usr/share/java/monitoring-interceptors/monitoring-interceptors-6.0.1.jar
+      CONNECT_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
+      CONNECT_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
+      CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
+    command:
+      - bash
+      - -c
+      - |
+        confluent-hub install --no-prompt debezium/debezium-connector-postgresql:latest
+        confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:latest
+        confluent-hub install --no-prompt mongodb/kafka-connect-mongodb:latest
+        sleep 2
+        /etc/confluent/docker/run &
+        sleep infinity
+
+  control-center:
+    image: confluentinc/cp-enterprise-control-center:6.0.1
+    hostname: control-center
+    container_name: control-center
+    depends_on:
+      - broker
+      - schema-registry
+      - connect
+      - ksqldb-server
+    ports:
+      - "9021:9021"
+    environment:
+      CONTROL_CENTER_BOOTSTRAP_SERVERS: 'broker:29092'
+      CONTROL_CENTER_CONNECT_CLUSTER: 'connect:8083'
+      CONTROL_CENTER_KSQL_KSQLDB1_URL: "http://ksqldb-server:8088"
+      CONTROL_CENTER_KSQL_KSQLDB1_ADVERTISED_URL: "http://localhost:8088"
+      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
+      CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
+      CONFLUENT_METRICS_TOPIC_REPLICATION: 1
+      PORT: 9021
+
+  ksqldb-server:
+    image: confluentinc/cp-ksqldb-server:6.0.1
+    hostname: ksqldb-server
+    container_name: ksqldb-server
+    depends_on:
+      - broker
+      - connect
+    ports:
+      - "8088:8088"
+    environment:
+      KSQL_CONFIG_DIR: "/etc/ksql"
+      KSQL_BOOTSTRAP_SERVERS: "broker:29092"
+      KSQL_HOST_NAME: ksqldb-server
+      KSQL_LISTENERS: "http://0.0.0.0:8088"
+      KSQL_CACHE_MAX_BYTES_BUFFERING: 0
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      KSQL_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
+      KSQL_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
+      KSQL_KSQL_CONNECT_URL: "http://connect:8083"
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_REPLICATION_FACTOR: 1
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: 'true'
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: 'true'
+      KSQL_KSQL_EXTENSION_DIR: "/home/appuser/ksqldb-udfs"
+      KSQL_KSQL_FUNCTIONS_FRAUD_URL: "http://192.168.1.117:13860/public/api/v1/fraud/fraud/predict"
+    command:
+      - bash
+      - -c
+      - |
+        mkdir /home/appuser/ksqldb-udfs
+        wget https://jlaw-public.s3-ap-southeast-1.amazonaws.com/demos/confluent-dataiku-fraud-demo/fraud-demo-udf-1.0-jar-with-dependencies.jar -P /home/appuser/ksqldb-udfs
+        sleep 2
+        /etc/confluent/docker/run &
+        sleep infinity
+
+  ksqldb-cli:
+    image: confluentinc/ksqldb-cli:latest
+    container_name: ksqldb-cli
+    depends_on:
+      - broker
+      - connect
+      - ksqldb-server
+    tty: true
+    command:
+      - sh
+      - -c
+      - |
+        sleep 150
+        echo
+        echo "=============== Starting Runme Commands for this test scenario ==================="
+        echo "..."
+        echo "..."
+        echo "CREATE Source CONNECTOR \`fraud-demo-postgres-source\` WITH ( \
+          'connector.class' = 'io.debezium.connector.postgresql.PostgresConnector', \
+          'tasks.max' = '1', \
+          'key.converter' = 'org.apache.kafka.connect.storage.StringConverter', \
+          'value.converter' = 'io.confluent.connect.avro.AvroConverter', \
+          'transforms' = 'unwrap,extractKey', \
+          'transforms.unwrap.type' = 'io.debezium.transforms.ExtractNewRecordState', \
+          'transforms.unwrap.drop.tombstones' = 'false', \
+          'transforms.extractKey.type' = 'org.apache.kafka.connect.transforms.ExtractField\$$Key', \
+          'transforms.extractKey.field' = 'id', \
+          'database.server.name' = 'fraud-demo', \
+          'database.hostname' = 'postgres', \
+          'database.port' = '5432', \
+          'database.user' = 'postgres', \
+          'database.password' = 'mysecretpassword', \
+          'database.dbname' = 'postgres', \
+          'plugin.name' = 'wal2json', \
+          'slot.name' = 'fraud_demo', \
+          'snapshot.mode' = 'exported', \
+          'table.include.list' = 'public.cardholders, public.merchants, public.transactions', \
+          'table.ignore.builtin' = 'false', \
+          'schema.include.list' = 'public', \
+          'value.converter.schema.registry.url' = 'http://schema-registry:8081', \
+          'internal.key.converter' = 'org.apache.kafka.connect.json.JsonConverter', \
+          'internal.value.converter' = 'org.apache.kafka.connect.json.JsonConverter', \
+          'key.converter.schema.registry.url' = 'http://schema-registry:8081' \
+        );" | ksql http://ksqldb-server:8088
+        sleep 10
+        echo "SET 'auto.offset.reset'='earliest'; CREATE TABLE \`cardholders\` (id STRING PRIMARY KEY, first_active_month STRING, reward_program STRING, latitude DOUBLE, longitude DOUBLE, fico_score BIGINT, age BIGINT) WITH (kafka_topic='fraud-demo.public.cardholders', value_format='AVRO');" | ksql http://ksqldb-server:8088
+        sleep 10
+        echo "SET 'auto.offset.reset'='earliest'; CREATE TABLE \`merchants\` (id STRING PRIMARY KEY, merchant_category_id BIGINT, subsector_description STRING, latitude DOUBLE, longitude DOUBLE) WITH (kafka_topic='fraud-demo.public.merchants', value_format='AVRO');" | ksql http://ksqldb-server:8088
+        sleep 10
+        echo "SET 'auto.offset.reset'='earliest'; CREATE STREAM \`transactions\` (id BIGINT, authorized_flag BIGINT, purchase_date STRING, card_id STRING, merchant_id STRING, merchant_category_id BIGINT, item_category STRING, purchase_amount DOUBLE, signature_provided BIGINT) WITH (kafka_topic='fraud-demo.public.transactions', value_format='AVRO');" | ksql http://ksqldb-server:8088
+        sleep 10
+        echo "SET 'auto.offset.reset'='earliest'; CREATE STREAM \`transactions_prepared_unknown\` AS \
+        SELECT \
+          CAST(t.id AS STRING) as \`transaction_id\`, \
+          t.authorized_flag as \`authorized_flag\`, \
+          t.purchase_date as \`purchase_date\`, \
+          t.card_id as \`card_id\`, \
+          t.merchant_id as \`merchant_id\`, \
+          t.merchant_category_id as \`merchant_category_id\`, \
+          t.item_category as \`item_category\`, \
+          t.purchase_amount as \`purchase_amount\`, \
+          t.signature_provided as \`signature_provided\`, \
+          c.first_active_month as \`card_first_active_month\`, \
+          c.reward_program as \`card_reward_program\`, \
+          c.latitude as \`card_latitude\`, \
+          c.longitude as \`card_longitude\`, \
+          c.fico_score as \`card_fico_score\`, \
+          c.age as \`card_age\`, \
+          m.subsector_description as \`merchant_subsector_description\`, \
+          m.latitude as \`merchant_latitude\`, \
+          m.longitude as \`merchant_longitude\`, \
+          distance(c.latitude, c.longitude, m.latitude, m.longitude) as \`merchant_cardholder_distance\` \
+        FROM \
+          \`transactions\` t \
+          INNER JOIN \`cardholders\` c ON t.card_id = c.id \
+          INNER JOIN \`merchants\` m ON t.merchant_id = m.id \
+        WHERE authorized_flag is null \
+        PARTITION BY CAST(t.id AS STRING);" | ksql http://ksqldb-server:8088
+        sleep 10
+        echo "SET 'auto.offset.reset'='earliest'; CREATE STREAM \`transactions_prepared\` AS \
+        SELECT \
+          CAST(t.id AS STRING) as \`transaction_id\`, \
+          t.authorized_flag as \`authorized_flag\`, \
+          t.purchase_date as \`purchase_date\`, \
+          t.card_id as \`card_id\`, \
+          t.merchant_id as \`merchant_id\`, \
+          t.merchant_category_id as \`merchant_category_id\`, \
+          t.item_category as \`item_category\`, \
+          t.purchase_amount as \`purchase_amount\`, \
+          t.signature_provided as \`signature_provided\`, \
+          c.first_active_month as \`card_first_active_month\`, \
+          c.reward_program as \`card_reward_program\`, \
+          c.latitude as \`card_latitude\`, \
+          c.longitude as \`card_longitude\`, \
+          c.fico_score as \`card_fico_score\`, \
+          c.age as \`card_age\`, \
+          m.subsector_description as \`merchant_subsector_description\`, \
+          m.latitude as \`merchant_latitude\`, \
+          m.longitude as \`merchant_longitude\`, \
+          distance(c.latitude, c.longitude, m.latitude, m.longitude) as \`merchant_cardholder_distance\` \
+        FROM \
+          \`transactions\` t \
+          INNER JOIN \`cardholders\` c ON t.card_id = c.id \
+          INNER JOIN \`merchants\` m ON t.merchant_id = m.id \
+        WHERE authorized_flag is not null \
+        PARTITION BY CAST(t.id AS STRING);" | ksql http://ksqldb-server:8088
+        echo "CREATE Source CONNECTOR \`fraud-demo-mongo-sink\` WITH ( \
+          'connector.class' = 'com.mongodb.kafka.connect.MongoSinkConnector', \
+          'tasks.max' = '1', \
+          'key.converter' = 'org.apache.kafka.connect.storage.StringConverter', \
+          'value.converter' = 'io.confluent.connect.avro.AvroConverter', \
+          'transforms' = 'key', \
+          'topics' = 'transactions_prepared, transactions_prepared_unknown, transactions_fraud_predictions', \
+          'transforms.key.type' = 'org.apache.kafka.connect.transforms.HoistField\$$Key', \
+          'transforms.key.field' = '_id', \
+          'connection.uri' = 'mongodb://root:example@mongo:27017', \
+          'database' = 'fraud_demo', \
+          'delete.on.null.values' = 'true', \
+          'document.id.strategy' = 'com.mongodb.kafka.connect.sink.processor.id.strategy.FullKeyStrategy', \
+          'value.converter.schema.registry.url' = 'http://schema-registry:8081', \
+          'key.converter.schema.registry.url' = 'http://schema-registry:8081' \
+        );" | ksql http://ksqldb-server:8088
+        sleep infinity
+
+  rest-proxy:
+    image: confluentinc/cp-kafka-rest:6.0.1
+    depends_on:
+      - broker
+      - schema-registry
+    ports:
+      - 8082:8082
+    hostname: rest-proxy
+    container_name: rest-proxy
+    environment:
+      KAFKA_REST_HOST_NAME: rest-proxy
+      KAFKA_REST_BOOTSTRAP_SERVERS: 'broker:29092'
+      KAFKA_REST_LISTENERS: "http://0.0.0.0:8082"
+      KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
