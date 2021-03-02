@@ -1,1 +1,1 @@
-![image-not-loaded](https://github.com/nav-nandan/workshops/blob/main/cdc-ksqldb-c360/c360_ksqldb.png)
+![image-not-loaded](https://github.com/confluentinc/apac-workshops/blob/master/cdc-ksqldb-c360/c360_ksqldb.png)
