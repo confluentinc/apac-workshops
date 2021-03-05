@@ -9,7 +9,7 @@ services:
     ports:
       - "1521:1521"
     volumes:
-      - /Users/naveen.nandan/Software/Projects/oracle12c-docker/data:/ORCL
+      - $PWD/oracle12c-docker/data:/ORCL
 
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2017-latest
