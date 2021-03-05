@@ -95,6 +95,7 @@ services:
       - broker
       - schema-registry
       - sqlserver
+      - hbase
     ports:
       - "8083:8083"
     environment:
@@ -129,8 +130,6 @@ services:
       - |
         #
         echo "Installing connector plugins"
-        confluent-hub install --no-prompt confluentinc/kafka-connect-oracle-cdc:1.0.3
-        sleep 10
         confluent-hub install --no-prompt debezium/debezium-connector-sqlserver:1.3.1
         sleep 10
         confluent-hub install --no-prompt confluentinc/kafka-connect-hbase:1.0.6
@@ -170,6 +169,8 @@ services:
     # docker exec -it ksqldb-cli ksql http://ksqldb-server:8088
     entrypoint: /bin/sh
     tty: true
+    volumes:
+      - $PWD:/data/scripts
 
   control-center:
     image: confluentinc/cp-enterprise-control-center:5.5.2

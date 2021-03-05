@@ -6,60 +6,11 @@ docker-compose up -d
 
 sleep 30
 
-docker logs $(docker ps | grep connect | awk '{ print $1}')
+docker logs connect
 
 sleep 30
 
-if [ $1 == "oracle" ]
-then
-    echo "Creating c360 db..."
-    cat c360_tables_oracle.sql | sqlplus C##myuser/password@ORCLCDB
-
-    echo "Creating Oracle CDC Source Connector"
-
-    curl -X PUT \
-        -H "Content-Type: application/json" \
-        --data '{
-            "connector.class": "io.confluent.connect.oracle.cdc.OracleCdcSourceConnector",
-
-            "tasks.max":1,
-            "key.converter": "org.apache.kafka.connect.storage.StringConverter",
-            "key.converter.schema.registry.url": "http://schema-registry:8081",
-            "value.converter": "io.confluent.connect.avro.AvroConverter",
-            "value.converter.schema.registry.url": "http://schema-registry:8081",
-            "confluent.license": "",
-            "confluent.topic.bootstrap.servers": "broker:9092",
-            "confluent.topic.replication.factor": "1",
-
-            "oracle.server": "dockerhost",
-            "oracle.port": 1521,
-            "oracle.sid": "ORCLCDB",
-            "oracle.username": "C##myuser",
-            "oracle.password": "password",
-            "redo.log.topic.name": "profile-redo-log-topic",
-            "redo.log.corruption.topic": "profile-redo-log-corruption-topic",
-            "redo.log.consumer.bootstrap.servers":"broker:9092",
-            "table.inclusion.regex": ".*CUSTPROFILE.*",
-            "table.topic.name.template": "${databaseName}.${schemaName}.${tableName}",
-            "connection.pool.max.size": 20,
-            "confluent.topic.replication.factor":1,
-            "redo.log.row.fetch.size":1,
-            "snapshot.row.fetch.size":1,
-
-            "topic.creation.enable": true,
-            "topic.creation.groups": "redo",
-            "topic.creation.redo.include": "profile-redo-log-topic",
-            "topic.creation.redo.replication.factor": 1,
-            "topic.creation.redo.partitions": 1,
-            "topic.creation.redo.cleanup.policy": "delete",
-            "topic.creation.redo.retention.ms": 1209600000,
-            "topic.creation.default.replication.factor": 1,
-            "topic.creation.default.partitions": 1,
-            "topic.creation.default.cleanup.policy": "compact"
-        }' \
-    http://localhost:8083/connectors/profile-cdc/config | jq .
-
-elif [ $1 == "sqlserver" ]
+if [ $1 == "sqlserver" ]
 then
     echo "Creating c360 db..."
     cat c360_tables_sqlserver.sql | docker exec -i sqlserver bash -c '/opt/mssql-tools/bin/sqlcmd -U sa -P Password!'
@@ -96,7 +47,9 @@ fi
 
 sleep 60
 
-docker logs $(docker ps | grep connect | awk '{ print $1}')
+docker exec -it ksqldb-cli bash -c 'cat /data/scripts/c360_ksql.sql | ksql http://ksqldb-server:8088'
+
+sleep 10
 
 echo "Creating HBase Sink Connector"
 
@@ -124,8 +77,17 @@ http://localhost:8083/connectors/hbase-sink/config | jq .
 
 sleep 30
 
-python c360_flask.py
+echo "Starting up Flask app"
 
-docker logs $(docker ps | grep connect | awk '{ print $1}') -f
+nohup python c360_flask.py &
 
-docker ps | grep connect | awk '{ print $1}'
+sleep 5
+
+echo "Flask app querying HBase..."
+
+curl -X GET http://localhost:5000/getallcustomers
+
+sleep 5
+
+pkill -f c360_flask.py
+rm nohup.out
