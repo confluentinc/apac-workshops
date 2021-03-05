@@ -4,9 +4,13 @@ export TNS_ADMIN=/opt/Oracle/product/12.2.0.1.0/instantclient/network/admin
 
 docker-compose up -d
 
-sleep 120
+sleep 150
 
 docker logs connect-1
+
+sleep 5
+
+docker logs connect-2
 
 sleep 30
 
@@ -96,9 +100,29 @@ then
     http://localhost:8084/connectors/debezium-sqlserver-source/config | jq .
 fi
 
+sleep 60
+
+docker exec -it ksqldb-cli bash -c 'cat /data/scripts/c360_materialized_view_ksql.sql | ksql http://ksqldb-server:8088'
+
 sleep 30
 
-docker logs connect-2 -f
+echo "Pull Query with single key"
 
-docker ps | grep connect-1 | awk '{ print $1}'
-docker ps | grep connect-2 | awk '{ print $1}'
+curl -X "POST" "http://ksqldb-server:8088/query-stream" -d $'{
+  "sql": "select * from c360_view where KSQL_COL_0 = \'C101|+|SAV101\';",
+  "streamsProperties": {}
+}' --http2
+
+echo "Pull Query with multiple keys"
+
+curl -X "POST" "http://ksqldb-server:8088/query-stream" -d $'{
+  "sql": "select * from c360_view where KSQL_COL_0 in (\'C101|+|SAV101\', \'C101|+|CUR101\', \'C102|+|CUR102\');",
+  "streamsProperties": {}
+}' --http2
+
+echo "Push Query - waiting for new events.."
+
+curl -X "POST" "http://ksqldb-server:8088/query-stream" -d $'{
+  "sql": "select * from c360_view emit changes;",
+  "streamsProperties": {}
+}' --http2

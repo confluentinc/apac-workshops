@@ -9,7 +9,7 @@ services:
     ports:
       - "1521:1521"
     volumes:
-      - $PWD/oracle12c-data:/ORCL
+      - /Users/naveen.nandan/Software/Projects/oracle12c-docker/data:/ORCL
 
   mongodb:
     image: mongo:latest

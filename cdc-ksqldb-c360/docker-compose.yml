@@ -9,7 +9,7 @@ services:
     ports:
       - "1521:1521"
     volumes:
-      - /data:/ORCL
+      - /Users/naveen.nandan/Software/Projects/oracle12c-docker/data:/ORCL
 
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2017-latest
@@ -219,6 +219,8 @@ services:
     # docker exec -it ksqldb-cli ksql http://ksqldb-server:8088
     entrypoint: /bin/sh
     tty: true
+    volumes:
+      - $PWD:/data/scripts
 
   control-center:
     image: confluentinc/cp-enterprise-control-center:5.5.2

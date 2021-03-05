@@ -8,6 +8,10 @@ sleep 120
 
 docker logs connect-1
 
+sleep 5
+
+docker logs connect-2
+
 sleep 30
 
 if [ $1 == "oracle" ] || [ $2 == "oracle" ]

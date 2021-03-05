@@ -39,26 +39,8 @@ from account_stream_keyed ask
 inner join transactions_stream_keyed tsk within 1 hours on ask.account_id=tsk.account_id
 emit changes;
 
---
 
---
 
-create table account_master_view as
-select
-customer_id,
-account_id,
-latest_by_offset(account_type, false) as account_type,
-latest_by_offset(account_opening_date, false) as account_opening_date,
-sum(transaction_amount) as account_balance
-from account_master_stream
-group by customer_id, account_id
-emit changes;
-
-select * from account_master_view where KSQL_COL_0 in ('C101|+|SAV101', 'C101|+|CUR101', 'C102|+|CUR102');
-
---
-
---
 
 create stream profile_stream with (kafka_topic='server1.dbo.profile', value_format='avro');
 
@@ -72,7 +54,6 @@ CREATE STREAM profile_stream_keyed
   FROM profile_stream
   PARTITION BY case when after is null then before->customer_id else after->customer_id end
   EMIT CHANGES;
-
 
 
 create stream phone_stream with (kafka_topic='server1.dbo.phone', value_format='avro');
@@ -103,6 +84,7 @@ CREATE STREAM address_stream_keyed
   FROM address_stream
   PARTITION BY case when after is null then before->customer_id else after->customer_id end
   EMIT CHANGES;
+
 
 
 
@@ -138,5 +120,3 @@ sum(transaction_amount) as account_balance
 from c360_stream
 group by customer_id, account_id
 emit changes;
-
-select * from c360_view where KSQL_COL_0 in ('C101|+|SAV101', 'C101|+|CUR101', 'C102|+|CUR102');
