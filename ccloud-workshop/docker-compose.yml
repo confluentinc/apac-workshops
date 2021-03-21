@@ -1,0 +1,45 @@
+---
+version: '3.5'
+services:
+  jupyter-participant1:
+    container_name: jupyter-participant1
+    image: jupyter/minimal-notebook:latest
+    ports:
+      - "8881:8888"
+    volumes:
+      - $PWD/notebooks-1:/home/jovyan
+  jupyter-participant2:
+    container_name: jupyter-participant2
+    image: jupyter/minimal-notebook:latest
+    ports:
+      - "8882:8888"
+    volumes:
+      - $PWD/notebooks-2:/home/jovyan
+  jupyter-participant3:
+    container_name: jupyter-participant3
+    image: jupyter/minimal-notebook:latest
+    ports:
+      - "8883:8888"
+    volumes:
+      - $PWD/notebooks-3:/home/jovyan
+  jupyter-participant4:
+    container_name: jupyter-participant4
+    image: jupyter/minimal-notebook:latest
+    ports:
+      - "8884:8888"
+    volumes:
+      - $PWD/notebooks-4:/home/jovyan
+  jupyter-participant5:
+    container_name: jupyter-participant5
+    image: jupyter/minimal-notebook:latest
+    ports:
+      - "8885:8888"
+    volumes:
+      - $PWD/notebooks-5:/home/jovyan
+  jupyter-participant6:
+    container_name: jupyter-participant6
+    image: jupyter/minimal-notebook:latest
+    ports:
+      - "8886:8888"
+    volumes:
+      - $PWD/notebooks-6:/home/jovyan

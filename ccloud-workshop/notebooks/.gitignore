@@ -1,0 +1,9 @@
+**/.cache/*
+**/.ccloud/*
+**/.ipynb_checkpoints/*
+**/.ipython/*
+**/.local/*
+**/ccloud/*
+
+.bash_history
+*.tar.gz
