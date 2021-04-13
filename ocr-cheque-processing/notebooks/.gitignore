@@ -1,0 +1,9 @@
+.DS_Store
+**/tmp/*
+**/.EasyOCR/*
+.bash_history
+**/.cache/*
+**/.ipynb_checkpoints/*
+**/.jupyter/*
+**/.keras/*
+**/.local/*
