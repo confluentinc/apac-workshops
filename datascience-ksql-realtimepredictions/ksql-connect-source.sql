@@ -1,0 +1,28 @@
+SET 'auto.offset.reset' = 'earliest';
+
+CREATE SOURCE CONNECTOR `fraud-demo-postgres-source` WITH (
+  "connector.class" = 'io.debezium.connector.postgresql.PostgresConnector',
+  "tasks.max" = '1',
+  "key.converter" = 'org.apache.kafka.connect.storage.StringConverter',
+  "value.converter" = 'io.confluent.connect.avro.AvroConverter',
+  "transforms" = 'unwrap,extractKey',
+  "transforms.unwrap.type" = 'io.debezium.transforms.ExtractNewRecordState',
+  "transforms.unwrap.drop.tombstones" = 'false',
+  "transforms.extractKey.type" = 'org.apache.kafka.connect.transforms.ExtractField$Key',
+  "transforms.extractKey.field" = 'id',
+  "database.server.name" = 'fraud-demo',
+  "database.hostname" = 'postgres',
+  "database.port" = '5432',
+  "database.user" = 'postgres',
+  "database.password" = 'mysecretpassword',
+  "database.dbname" = 'postgres',
+  "plugin.name" = 'wal2json',
+  "slot.name" = 'fraud_demo',
+  "snapshot.mode" = 'exported',
+  "table.include.list" = 'public.cardholders, public.merchants, public.transactions',
+  "table.ignore.builtin" = 'false',
+  "schema.include.list" = 'public',
+  "value.converter.schema.registry.url" = 'http://schema-registry:8081',
+  "internal.key.converter" = 'org.apache.kafka.connect.json.JsonConverter',
+  "internal.value.converter" = 'org.apache.kafka.connect.json.JsonConverter',
+  "key.converter.schema.registry.url" = 'http://schema-registry:8081');
