@@ -1,0 +1,11 @@
+---
+version: '3.5'
+services:
+  jupyter-participant1:
+    container_name: jupyter-participant1
+    image: jupyter/minimal-notebook:latest
+    ports:
+      - "8888:8888"
+    volumes:
+      - $PWD/notebooks:/home/jovyan
+
