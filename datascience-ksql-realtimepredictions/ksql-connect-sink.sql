@@ -6,7 +6,7 @@ CREATE SINK CONNECTOR `fraud-demo-mongo-sink` WITH (
   "key.converter" = 'org.apache.kafka.connect.storage.StringConverter',
   "value.converter" = 'io.confluent.connect.avro.AvroConverter',
   "transforms" = 'key',
-  "topics" = 'transactions_prepared, transactions_prepared_unknown, transactions_fraud_predictions',
+  "topics" = 'transactions_prepared, transactions_prepared_unknown, transactions_fraud_predictions_raw',
   "transforms.key.type" = 'org.apache.kafka.connect.transforms.HoistField$Key',
   "transforms.key.field" = '_id',
   "connection.uri" = 'mongodb://root:example@mongo:27017',
@@ -14,4 +14,4 @@ CREATE SINK CONNECTOR `fraud-demo-mongo-sink` WITH (
   "delete.on.null.values" = 'true',
   "document.id.strategy" = 'com.mongodb.kafka.connect.sink.processor.id.strategy.FullKeyStrategy',
   "value.converter.schema.registry.url" = 'http://schema-registry:8081',
-  "key.converter.schema.registry.url" = 'http://schema-registry:8081');"
+  "key.converter.schema.registry.url" = 'http://schema-registry:8081');

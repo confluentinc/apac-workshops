@@ -41,7 +41,7 @@ docker exec -it ksqldb-server bash -c "ksql http://ksqldb-server:8088 < /tmp/cmd
 
 sleep 10
 
-# KSQL Queries
+# KSQL queries
 printf "\n\n================================================================================\n"
 printf "Running KSQL queries...\n"
 printf "================================================================================\n\n"
@@ -57,12 +57,28 @@ printf "========================================================================
 docker cp ksql-connect-sink.sql ksqldb-server:/tmp/cmd.sql
 docker exec -it ksqldb-server bash -c "ksql http://ksqldb-server:8088 < /tmp/cmd.sql"
 
+# Dataiku API node
+printf "\n\n================================================================================\n"
+printf "Preparing Dataiku API node...\n"
+printf "================================================================================\n\n"
+docker cp fraud_prediction_v1.zip dataiku-dss:/tmp/fraud_prediction_v1.zip
+docker exec -it dataiku-dss bash -c "/home/dataiku/dataiku-dss-8.0.2/installer.sh -t api -d /home/dataiku/api -p 8888 -l /home/dataiku/dss/config/license.json; \
+  /home/dataiku/api/bin/dss start; \
+  /home/dataiku/api/bin/apinode-admin service-create fraud_prediction; \
+  /home/dataiku/api/bin/apinode-admin service-import-generation fraud_prediction /tmp/fraud_prediction_v1.zip; \
+  /home/dataiku/api/bin/apinode-admin service-switch-to-newest fraud_prediction"
+
+# KSQL queries part 2
+printf "\n\n================================================================================\n"
+printf "Running KSQL queries (using ML models)...\n"
+printf "================================================================================\n\n"
+docker cp ksql-queries2.sql ksqldb-server:/tmp/cmd.sql
+docker exec -it ksqldb-server bash -c "ksql http://ksqldb-server:8088 < /tmp/cmd.sql"
+
 printf "\n\n================================================================================\n"
 printf "Done! Access UI at:\n"
 printf "Control Center : localhost:9021\n"
 printf "Dataiku DSS    : localhost:10000\n"
-printf "** Remember to start the API endpoint for fraud_demo project in API Designer **\n"
-printf "   API Designer URL: http://localhost:10000/projects/FRAUD_DEMO/api-designer/fraud_prediction/endpoints/\n"
 printf "   Dataiku username: admin\n"
 printf "   Dataiku password: admin\n"
 printf "================================================================================\n\n"
