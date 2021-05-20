@@ -1,0 +1,53 @@
+
+CREATE STREAM WIP_INITIALIZATION (lab varchar KEY, rx int, hc int)
+WITH (kafka_topic='WIP_INITIALIZATION', partitions=1, value_format='avro');
+
+CREATE STREAM JOBS (lab varchar KEY, completed varchar, next varchar)
+WITH (kafka_topic='JOBS', partitions=1, value_format='avro');
+
+CREATE TABLE WIP (lab varchar primary key, rx int, hc int)
+WITH (kafka_topic='WIP', partitions=1, value_format='avro');
+
+-- initialization
+INSERT INTO WIP_INITIALIZATION (lab, rx, hc) VALUES ('EOLT', 15, 10);
+INSERT INTO WIP_INITIALIZATION (lab, rx, hc) VALUES ('EMTC', 10, 5);
+
+set 'auto.offset.reset'='earliest';
+
+create stream wip_initialization_update
+with (kafka_topic='WIP')
+as
+select wip_initialization.lab as lab,
+case when wip.rx is null then wip_initialization.rx else wip_initialization.rx + wip.rx end as RX,
+case when wip.hc is null then wip_initialization.hc else wip_initialization.hc + wip.hc end as HC
+from wip_initialization
+left join wip on wip_initialization.lab = wip.lab
+emit changes;
+
+create stream jobs_update as
+select lab,
+case when completed='RX' and next!='RX' then -1 else 1 end as RX,
+case when completed='HC' and next!='HC' then -1 else 1 end as HC
+from jobs
+partition by lab
+emit changes;
+
+create stream wip_stream
+with (kafka_topic='WIP')
+as
+select wip.lab as lab,
+jobs_update.rx + wip.rx as RX,
+jobs_update.hc + wip.hc as HC
+from jobs_update
+inner join wip on jobs_update.lab = wip.lab
+emit changes;
+
+create table wip_current
+with (kafka_topic='wip_current')
+as
+select lab,
+latest_by_offset(RX) as RX,
+latest_by_offset(HC) as HC
+from wip_stream
+group by lab;
+

@@ -1,0 +1,7 @@
+
+INSERT INTO JOBS (lab, completed, next) VALUES ('EOLT', 'RX', 'HC');
+INSERT INTO JOBS (lab, completed, next) VALUES ('EMTC', 'RX', 'HC');
+INSERT INTO JOBS (lab, completed, next) VALUES ('EMTC', 'RX', 'HC');
+INSERT INTO JOBS (lab, completed, next) VALUES ('EOLT', 'RX', 'HC');
+INSERT INTO JOBS (lab, completed, next) VALUES ('EOLT', 'RX', 'HC');
+
