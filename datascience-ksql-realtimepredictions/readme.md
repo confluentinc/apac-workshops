@@ -10,6 +10,7 @@ __Features shown in this demo__
 * Pre-built connectors (CDC from PostgreSQL, sink to MongoDB)
 * Control Center UI including ksqlDB flow view
 * Integrated connectors in ksqlDB
+* `[oracle-setup]{oracle-setup/}` will have the same setup with Oracle Database and Confluent CDC Connector and a transaction testdata generator.
 
 __Logical architecture__
 

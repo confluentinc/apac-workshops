@@ -47,6 +47,7 @@ services:
       - -c
       - |
         cp -r /tmp/dss /home/dataiku
+        chmod u+x /home/dataiku/dss/pyenv/bin/python
         /home/dataiku/dataiku-dss-8.0.2/installer.sh -d /home/dataiku/dss -u -y
         /home/dataiku/dss/bin/dssadmin install-R-integration
         exec /home/dataiku/dss/bin/dss run &

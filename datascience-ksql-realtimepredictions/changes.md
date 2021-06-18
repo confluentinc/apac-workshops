@@ -1,5 +1,8 @@
 ## Changes:
 
+__oracle cdc__
+* Did add oracle-setup folder to play with Oracle and Confluent CDC Connector instead of PostGreSQL
+
 __docker-compose.yml__
 * Updated Confluent images to 6.1.0
 * Changed ksqlDB to use community image ksqldb-server:0.15.0
