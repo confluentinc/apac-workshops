@@ -1,0 +1,183 @@
+version: "3"
+services:
+  oradb122:
+    image: store/oracle/database-enterprise:12.2.0.1
+    container_name: oradb122
+    hostname: oradb122
+    ports:
+      - 1521:1521
+    volumes:
+      - ./oracle:/tmp/scripts
+
+#  postgres:
+#    container_name: postgres
+#    image: debezium/postgres
+#    restart: always
+#    ports:
+#      - 5433:5432
+#    environment:
+#      - POSTGRES_PASSWORD=mysecretpassword
+#    volumes:
+#      - ./postgres:/tmp/init
+#    command:
+#      - bash
+#      - -c
+#      - |
+#        docker-entrypoint.sh -c 'shared_buffers=256MB' \
+#          -c 'max_connections=200' \
+#          -c 'wal_level=logical' \
+#          -c 'max_wal_senders=5' \
+#          -c 'max_replication_slots=1' \
+#          -c 'log_statement=all' \
+#          -c 'log_destination=stderr' \
+#          -c 'log_statement=all'
+#        sleep infinity
+
+  mongo:
+    container_name: mongo
+    image: mongo
+    restart: always
+    ports:
+      - 27017:27017
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+  
+  mongo-express:
+    container_name: mongo-express
+    image: mongo-express
+    restart: always
+    ports:
+      - 9081:8081
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: root
+      ME_CONFIG_MONGODB_ADMINPASSWORD: example
+
+  dataiku-dss:
+    container_name: dataiku-dss
+    image: dataiku/dss:8.0.2
+    restart: always
+    ports:
+      - 10000:10000
+    volumes:
+      - ./dss:/tmp/dss
+    command:
+      - bash
+      - -c
+      - |
+        cp -r /tmp/dss /home/dataiku
+        chmod u+x /home/dataiku/dss/pyenv/bin/python
+        /home/dataiku/dataiku-dss-8.0.2/installer.sh -d /home/dataiku/dss -u -y
+        /home/dataiku/dss/bin/dssadmin install-R-integration
+        exec /home/dataiku/dss/bin/dss run &
+        sleep infinity
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:6.1.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  broker:
+    container_name: broker
+    image: confluentinc/cp-server:6.1.0
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 100
+      KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: broker:29092
+      CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
+      CONFLUENT_METRICS_ENABLE: 'true'
+      CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
+
+  schema-registry:
+    container_name: schema-registry
+    image: confluentinc/cp-schema-registry:6.1.0
+    depends_on:
+      - broker
+    ports:
+      - 8081:8081
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'broker:29092'
+
+  ksqldb-server:
+    image: confluentinc/ksqldb-server:0.15.0
+    container_name: ksqldb-server
+    ports:
+      - 8088:8088
+      - 8083:8083
+    depends_on:
+      - broker
+      - schema-registry
+    environment:
+      KSQL_BOOTSTRAP_SERVERS: "broker:29092"
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_CACHE_MAX_BYTES_BUFFERING: 0
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_REPLICATION_FACTOR: 1
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: 'true'
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: 'true'
+      KSQL_KSQL_EXTENSION_DIR: "/home/appuser/ksqldb-udfs"
+      KSQL_KSQL_FUNCTIONS_FRAUD_URL: "http://192.168.1.117:13860/public/api/v1/fraud/fraud/predict"
+      KSQL_KSQL_SERVICE_ID: "ksql-cluster"
+
+      # ksqlDB embedded Connect worker
+      KSQL_CONNECT_BOOTSTRAP_SERVERS: broker:29092
+      KSQL_CONNECT_REST_ADVERTISED_HOST_NAME: ksqldb
+      KSQL_CONNECT_REST_PORT: 8083
+      KSQL_CONNECT_GROUP_ID: ksqldb-kafka-connect-group-01
+      KSQL_CONNECT_CONFIG_STORAGE_TOPIC: _ksqldb-kafka-connect-group-01-configs
+      KSQL_CONNECT_OFFSET_STORAGE_TOPIC: _ksqldb-kafka-connect-group-01-offsets
+      KSQL_CONNECT_STATUS_STORAGE_TOPIC: _ksqldb-kafka-connect-group-01-status
+      KSQL_CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      KSQL_CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      KSQL_CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      KSQL_CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      KSQL_CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      KSQL_CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KSQL_CONNECT_LOG4J_APPENDER_STDOUT_LAYOUT_CONVERSIONPATTERN: '[%d] %p %X{connector.context}%m (%c:%L)%n'
+      KSQL_CONNECT_PLUGIN_PATH: '/usr/share/java,/usr/share/confluent-hub-components/,/data/connect-jars'
+
+      CONNECT_HOST: ksqldb-server
+    volumes:
+      - ./ksqldb-udfs:/home/appuser/ksqldb-udfs
+      - ./confluent-hub-components/:/usr/share/confluent-hub-components
+
+  control-center:
+    image: confluentinc/cp-enterprise-control-center:6.1.0
+    container_name: control-center
+    depends_on:
+      - broker
+      - schema-registry
+      - ksqldb-server
+    ports:
+      - 9021:9021
+    environment:
+      CONTROL_CENTER_BOOTSTRAP_SERVERS: 'broker:29092'
+      CONTROL_CENTER_CONNECT_CLUSTER: 'ksqldb-server:8083'
+      CONTROL_CENTER_KSQL_KSQLDB1_URL: "http://ksqldb-server:8088"
+      CONTROL_CENTER_KSQL_KSQLDB1_ADVERTISED_URL: "http://localhost:8088"
+      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
+      CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
+      CONFLUENT_METRICS_TOPIC_REPLICATION: 1
+      PORT: 9021
