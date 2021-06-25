@@ -1,0 +1,24 @@
+{
+  "name": "sftp-source",
+  "config": {
+    "connector.class": "io.confluent.connect.sftp.SftpJsonSourceConnector",
+    "tasks.max": "1",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "sftp.host": "sftp",
+    "sftp.port": "22",
+    "sftp.username": "demo",
+    "sftp.password": "example",
+    "kafka.topic": "demo_retail_raw",
+    "input.path": "/upload",
+    "finished.path": "/upload/finished",
+    "error.path": "/upload/error",
+    "cleanup.policy": "DELETE",
+    "input.file.pattern": ".*json",
+    "key.schema": "{\"name\":\"retailkeyschema\",\"type\":\"STRUCT\",\"isOptional\":true,\"fieldSchemas\":{}}",
+    "value.schema": "{\"name\":\"retailschema\",\"type\":\"STRUCT\",\"isOptional\":false,\"fieldSchemas\":{\"transaction_id\":{\"type\":\"STRING\",\"isOptional\":true},\"user_id\":{\"type\":\"STRING\",\"isOptional\":true},\"shop_id\":{\"type\":\"STRING\",\"isOptional\":true},\"paid\":{\"type\":\"FLOAT32\",\"isOptional\":true}}}",
+    "schema.generation.enabled": "false",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+    "key.converter.schema.registry.url": "http://schema-registry:8081"
+  }
+}

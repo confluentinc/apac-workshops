@@ -1,0 +1,22 @@
+{
+  "name": "rabbitmq-source",
+  "config": {
+    "connector.class": "io.confluent.connect.rabbitmq.RabbitMQSourceConnector",
+    "tasks.max": "1",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "transforms": "jsoninline",
+    "transforms.jsoninline.type": "com.github.jcustenborder.kafka.connect.json.FromJson$Value",
+    "transforms.jsoninline.json.schema.inline": "{\"type\":\"object\",\"title\":\"Toll Schema\",\"required\":[\"transaction_id\",\"user_id\",\"tollgate_id\",\"fare\",\"lat\",\"long\"],\"properties\":{\"transaction_id\":{\"default\":\"\",\"type\":\"string\"},\"user_id\":{\"default\":\"\",\"type\":\"string\"},\"tollgate_id\":{\"default\":\"\",\"type\":\"string\"},\"fare\":{\"default\":\"\",\"type\":\"number\"},\"lat\":{\"default\":\"\",\"type\":\"number\"},\"long\":{\"default\":\"\",\"type\":\"number\"}},\"additionalProperties\":true}",
+    "transforms.jsoninline.json.schema.location": "Inline",
+    "rabbitmq.host": "rabbitmq",
+    "rabbitmq.username": "root",
+    "rabbitmq.password": "example",
+    "rabbitmq.port": "5672",
+    "confluent.topic.bootstrap.servers": "broker:29092",
+    "confluent.topic": "rabbitmq-license",
+    "confluent.topic.replication.factor": "1",
+    "kafka.topic": "demo_toll",
+    "rabbitmq.queue": "demo_toll"
+  }
+}

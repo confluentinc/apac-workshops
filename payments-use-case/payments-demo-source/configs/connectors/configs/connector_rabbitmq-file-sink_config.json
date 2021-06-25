@@ -1,0 +1,16 @@
+{
+  "connector.class": "io.confluent.connect.rabbitmq.sink.RabbitMQSinkConnector",
+  "tasks.max": "1",
+  "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
+  "topics": "demo_toll",
+  "rabbitmq.host": "rabbitmq",
+  "rabbitmq.username": "root",
+  "rabbitmq.password": "example",
+  "rabbitmq.port": "5672",
+  "confluent.topic.bootstrap.servers": "broker:29092",
+  "confluent.topic": "rabbitmq-license",
+  "confluent.topic.replication.factor": "1",
+  "rabbitmq.exchange": "demo_toll_exchange",
+  "rabbitmq.routing.key": "demo_toll_file",
+  "rabbitmq.delivery.mode": "persistent"
+}

@@ -1,0 +1,26 @@
+{
+  "name": "oracle-source",
+  "config": {
+    "connector.class": "io.confluent.connect.oracle.cdc.OracleCdcSourceConnector",
+    "tasks.max": "1",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "oracle.server": "oracle",
+    "oracle.port": "1521",
+    "oracle.sid": "ORCLCDB",
+    "oracle.username": "C##MYUSER",
+    "oracle.password": "mypassword",
+    "start.from": "snapshot",
+    "redo.log.topic.name": "redo-log-topic",
+    "redo.log.consumer.bootstrap.servers": "broker:29092",
+    "numeric.mapping": "best_fit",
+    "table.inclusion.regex": ".*CARD_TRANSACTIONS.*",
+    "table.topic.name.template": "demo_${tableName}",
+    "connection.pool.max.size": "20",
+    "confluent.license": "",
+    "confluent.topic.bootstrap.servers": "broker:29092",
+    "confluent.topic.replication.factor": "1",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+    "key.converter.schema.registry.url": "http://schema-registry:8081"
+  }
+}

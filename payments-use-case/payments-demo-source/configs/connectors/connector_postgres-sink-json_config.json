@@ -1,0 +1,16 @@
+{
+  "name": "postgres-sink-json",
+  "config": {
+    "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+    "tasks.max": "1",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "topics": "demo_toll",
+    "connection.url": "jdbc:postgresql://postgres:5432/demo",
+    "connection.user": "root",
+    "connection.password": "example",
+    "dialect.name": "PostgreSqlDatabaseDialect",
+    "auto.create": "true",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+    "key.converter.schema.registry.url": "http://schema-registry:8081"
+  }
+}

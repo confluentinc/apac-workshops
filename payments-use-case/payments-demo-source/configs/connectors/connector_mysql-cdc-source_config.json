@@ -1,0 +1,24 @@
+{
+  "name": "mysql-cdc-source",
+  "config": {
+    "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+    "tasks.max": "1",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "transforms": "unwrap, route",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "^([a-z']+)\\.([a-z']+)\\.([a-z']+)$",
+    "transforms.route.replacement": "demo_$3",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "database.hostname": "mysql",
+    "database.port": "3306",
+    "database.user": "root",
+    "database.password": "example",
+    "database.server.name": "cdc",
+    "database.history.kafka.bootstrap.servers": "broker:29092",
+    "database.history.kafka.topic": "mysql-history",
+    "database.include.list": "demo",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+    "key.converter.schema.registry.url": "http://schema-registry:8081"
+  }
+}

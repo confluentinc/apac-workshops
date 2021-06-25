@@ -1,0 +1,418 @@
+version: "3"
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:6.0.1
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  broker:
+    image: confluentinc/cp-server:6.0.1
+    hostname: broker
+    container_name: broker
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_CONFLUENT_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: broker:29092
+      CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
+      CONFLUENT_METRICS_ENABLE: 'true'
+      CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
+      # RBAC
+      KAFKA_SUPER_USERS: User:admin
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://localhost:9092,EXTERNAL://broker:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
+      KAFKA_CONFLUENT_METADATA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+       # Configure interbroker listener
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_LISTENER_NAME_INTERNAL_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_LISTENER_NAME_INTERNAL_PLAIN_SASL_JAAS_CONFIG: |
+                                                            \
+                                                            org.apache.kafka.common.security.plain.PlainLoginModule required \
+                                                            username="admin" \
+                                                            password="example" \
+                                                            user_admin="example" \
+                                                            user_mds="example";
+
+      # Configure external listener
+      KAFKA_LISTENER_NAME_EXTERNAL_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_LISTENER_NAME_EXTERNAL_PLAIN_SASL_JAAS_CONFIG: |
+                                                      \
+                                                      org.apache.kafka.common.security.plain.PlainLoginModule required \
+                                                      username="admin" \
+                                                      password="example";
+
+      # ======================== CONFIGURE MDS ====================================
+      # Configure how MDS talks to broker
+      KAFKA_CONFLUENT_METADATA_BOOTSTRAP_SERVERS: INTERNAL://localhost:9092
+      KAFKA_CONFLUENT_METADATA_SASL_MECHANISM: PLAIN
+      KAFKA_CONFLUENT_METADATA_SASL_JAAS_CONFIG: |
+                                                  \
+                                                  org.apache.kafka.common.security.plain.PlainLoginModule required \
+                                                  username="mds" \
+                                                  password="example";
+      # Configure how MDS stores its data in a topic
+      # supposedly more stuff can be overridden with the same prefix
+      KAFKA_CONFLUENT_METADATA_TOPIC_REPLICATION_FACTOR: 1
+
+      # Configure MDS listener and http server
+      KAFKA_CONFLUENT_METADATA_SERVER_AUTHENTICATION_METHOD: BEARER
+      KAFKA_CONFLUENT_METADATA_SERVER_AUTHENTICATION_ROLES: '**'
+      KAFKA_CONFLUENT_METADATA_SERVER_LISTENERS: http://0.0.0.0:8090
+      KAFKA_CONFLUENT_METADATA_SERVER_ADVERTISED_LISTENERS: http://broker:8090
+      KAFKA_CONFLUENT_METADATA_SERVER_OPENAPI_ENABLE: 'true'
+
+      # Configure MDS to talk to AD/LDAP
+      KAFKA_LDAP_JAVA_NAMING_FACTORY_INITIAL: com.sun.jndi.ldap.LdapCtxFactory
+      KAFKA_LDAP_COM_SUN_JNDI_LDAP_READ_TIMEOUT: 3000
+      KAFKA_LDAP_JAVA_NAMING_PROVIDER_URL: ldap://openldap:389
+      # how to authenticate to LDAP
+      KAFKA_LDAP_JAVA_NAMING_SECURITY_PRINCIPAL: cn=admin,dc=confluent,dc=demo
+      KAFKA_LDAP_JAVA_NAMING_SECURITY_CREDENTIALS: example
+      KAFKA_LDAP_JAVA_NAMING_SECURITY_AUTHENTICATION: simple
+      # how to locate users and groups
+      KAFKA_LDAP_SEARCH_MODE: USERS
+      KAFKA_LDAP_USER_SEARCH_SCOPE: 2
+      KAFKA_LDAP_USER_SEARCH_BASE: dc=confluent,dc=demo
+      KAFKA_LDAP_USER_NAME_ATTRIBUTE: cn
+      KAFKA_LDAP_USER_OBJECT_CLASS: inetOrgPerson
+      KAFKA_LDAP_USER_MEMBEROF_ATTRIBUTE: ou
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:6.0.1
+    hostname: schema-registry
+    container_name: schema-registry
+    depends_on:
+      - broker
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'broker:29092'
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+
+  connect:
+    image: confluentinc/cp-kafka-connect:6.0.1
+    hostname: connect
+    container_name: connect
+    depends_on:
+      - broker
+      - schema-registry
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: 'broker:29092'
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: compose-connect-group
+      CONNECT_CONFIG_STORAGE_TOPIC: docker-connect-configs
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_FLUSH_INTERVAL_MS: 10000
+      CONNECT_OFFSET_STORAGE_TOPIC: docker-connect-offsets
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_TOPIC: docker-connect-status
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      # CLASSPATH required due to CC-2422
+      CLASSPATH: /usr/share/java/monitoring-interceptors/monitoring-interceptors-6.0.1.jar
+      CONNECT_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
+      CONNECT_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
+      CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
+      CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY: All
+    command:
+      - bash
+      - -c
+      - |
+        confluent-hub install confluentinc/kafka-connect-sftp:2.2.4 --no-prompt
+        confluent-hub install confluentinc/kafka-connect-rabbitmq:1.4.1 --no-prompt
+        confluent-hub install confluentinc/kafka-connect-rabbitmq-sink:1.4.0 --no-prompt
+        confluent-hub install debezium/debezium-connector-mysql:1.3.1 --no-prompt
+        confluent-hub install confluentinc/kafka-connect-jdbc:10.0.2 --no-prompt
+        confluent-hub install jcustenborder/kafka-connect-json-schema:latest --no-prompt
+        confluent-hub install confluentinc/kafka-connect-oracle-cdc:1.0.4 --no-prompt
+        sleep 2
+        /etc/confluent/docker/run &
+        sleep infinity
+
+  control-center:
+    image: confluentinc/cp-enterprise-control-center:6.0.1
+    hostname: control-center
+    container_name: control-center
+    depends_on:
+      - broker
+      - schema-registry
+      - connect
+      - ksqldb-server
+    ports:
+      - "9021:9021"
+    environment:
+      CONTROL_CENTER_BOOTSTRAP_SERVERS: 'broker:29092'
+      CONTROL_CENTER_CONNECT_CLUSTER: 'connect:8083'
+      CONTROL_CENTER_KSQL_KSQLDB1_URL: "http://ksqldb-server:8088"
+      CONTROL_CENTER_KSQL_KSQLDB1_ADVERTISED_URL: "http://localhost:8088"
+      CONTROL_CENTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
+      CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
+      CONFLUENT_METRICS_TOPIC_REPLICATION: 1
+      PORT: 9021
+      # ========================= RBAC =================================
+      CONFLUENT_METADATA_BASIC_AUTH_USER_INFO: admin:example
+      CONFLUENT_METADATA_BOOTSTRAP_SERVER_URLS: http://broker:8090
+      CONTROL_CENTER_STREAMS_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      CONTROL_CENTER_STREAMS_SASL_JAAS_CONFIG: |
+                                                \
+                                                org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required \
+                                                username="admin" \
+                                                password="example" \
+                                                metadataServerUrls="http://broker:8090";
+
+
+  ksqldb-server:
+    image: confluentinc/cp-ksqldb-server:6.0.1
+    hostname: ksqldb-server
+    container_name: ksqldb-server
+    depends_on:
+      - broker
+      - connect
+    ports:
+      - "8088:8088"
+    environment:
+      KSQL_CONFIG_DIR: "/etc/ksql"
+      KSQL_BOOTSTRAP_SERVERS: "broker:29092"
+      KSQL_HOST_NAME: ksqldb-server
+      KSQL_LISTENERS: "http://0.0.0.0:8088"
+      KSQL_CACHE_MAX_BYTES_BUFFERING: 0
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      KSQL_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
+      KSQL_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
+      KSQL_KSQL_CONNECT_URL: "http://connect:8083"
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_REPLICATION_FACTOR: 1
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: 'true'
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: 'true'
+      KSQL_KSQL_EXTENSION_DIR: "/home/appuser/ksqldb-udfs"
+
+  ksqldb-cli:
+    image: confluentinc/ksqldb-cli:latest
+    container_name: ksqldb-cli
+    entrypoint: /bin/sh
+    depends_on:
+      - broker
+      - connect
+      - ksqldb-server
+    tty: true
+
+  rest-proxy:
+    image: confluentinc/cp-kafka-rest:6.0.1
+    depends_on:
+      - broker
+      - schema-registry
+    ports:
+      - 8082:8082
+    hostname: rest-proxy
+    container_name: rest-proxy
+    environment:
+      KAFKA_REST_HOST_NAME: rest-proxy
+      KAFKA_REST_BOOTSTRAP_SERVERS: 'broker:29092'
+      KAFKA_REST_LISTENERS: "http://0.0.0.0:8082"
+      KAFKA_REST_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+
+  demo-ui:
+    container_name: demo-ui
+    hostname: demo-ui
+    image: jerroldlaw/node:14-oracle
+    volumes:
+      - ../../ui/:/etc/app/
+    restart: always
+    ports:
+      - 24601:3000
+    command:
+      - bash
+      - -c
+      - |
+        cd /etc/app/
+        npm start
+        sleep infinity
+
+  demo-server:
+    container_name: demo-server
+    hostname: demo-server
+    image: jerroldlaw/node:14-oracle
+    volumes:
+      - ../../microservices/:/etc/app/
+    restart: always
+    ports:
+      - 3010:3010
+    environment:
+      - MYSQL_HOST=mysql
+      - ORACLE_HOST=13.229.224.202
+      - RABBITMQ_HOST=rabbitmq
+      - SFTP_HOST=sftp
+      - SFTP_PORT=22
+      - REST_PROXY_HOST=rest-proxy
+    command:
+      - bash
+      - -c
+      - |
+        cd /etc/app/backend
+        while ! [ -f /tmp/go ];
+        do
+          echo "Waiting for data sources to start..."
+          sleep 10
+        done
+        node server
+        sleep infinity
+
+  demo-alerts:
+    container_name: demo-alerts
+    hostname: demo-alerts
+    image: jerroldlaw/node:14-oracle
+    volumes:
+      - ../../microservices/:/etc/app/
+    restart: always
+    environment:
+      - BROKER_HOST=broker
+      - BROKER_PORT=29092
+      - PD_ROUTING_KEY=0bcafa430ad241f080c62184ed1a3a4f
+    command:
+      - bash
+      - -c
+      - |
+        cd /etc/app/alerts
+        while ! [ -f /tmp/go ];
+        do
+          echo "Waiting to start..."
+          sleep 10
+        done
+        node alert
+        sleep infinity
+
+  mongo:
+    image: mongo
+    container_name: mongo
+    hostname: mongo
+    restart: always
+    ports:
+      - 27017:27017
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+
+  mongo-express:
+    image: mongo-express
+    container_name: mongo-express
+    hostname: mongo-express
+    restart: always
+    ports:
+      - 8084:8081
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: root
+      ME_CONFIG_MONGODB_ADMINPASSWORD: example
+
+  rabbit-mq:
+    image: bitnami/rabbitmq:3.8.11
+    container_name: rabbitmq
+    hostname: rabbitmq
+    restart: always
+    ports:
+      - 5672:5672
+      - 15672:15672
+    environment:
+      RABBITMQ_USERNAME: root
+      RABBITMQ_PASSWORD: example
+
+  mysql:
+    image: debezium/example-mysql:1.4
+    container_name: mysql
+    hostname: mysql
+    restart: always
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+      MYSQL_USER: demo
+      MYSQL_PASSWORD: demo
+      MYSQL_DATABASE: demo
+
+  sftp:
+    image: atmoz/sftp
+    container_name: sftp
+    hostname: sftp
+    restart: always
+    ports:
+      - "2222:22"
+    command: demo:example:1001::upload
+
+  postgres:
+    container_name: postgres
+    image: debezium/postgres
+    hostname: postgres
+    restart: always
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=example
+      - POSTGRES_DB=demo
+
+  metabase:
+    container_name: metabase
+    image: metabase/metabase
+    hostname: metabase
+    restart: always
+    ports:
+      - 3020:3000
+
+  # oracle:
+  #   image: jerroldlaw/oracle-ee:12-ee-quick
+  #   hostname: oracle
+  #   container_name: oracle
+  #   ports:
+  #     - "1521:1521"
+
+  openldap:
+    container_name: openldap
+    image: osixia/openldap:1.5.0
+    hostname: openldap
+    restart: always
+    volumes:
+      - ../ldap:/container/service/slapd/assets/config/bootstrap/ldif/custom
+    ports:
+      - 389:389
+    command: [--copy-service]
+    environment:
+      - LDAP_DOMAIN=confluent.demo
+      - LDAP_ADMIN_PASSWORD=example
+      - LDAP_ORGANISATION=Confluent
+
+  phpldapadmin:
+    container_name: phpldapadmin
+    image: osixia/phpldapadmin:0.9.0
+    hostname: phpldapadmin
+    restart: always
+    ports:
+      - 6443:443
+    environment:
+      - PHPLDAPADMIN_LDAP_HOSTS=openldap
