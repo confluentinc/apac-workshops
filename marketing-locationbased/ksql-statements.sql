@@ -30,19 +30,22 @@ WITH (KAFKA_TOPIC='user_locations_raw', FORMAT='JSON_SR');
 CREATE STREAM user_locations
 WITH (KAFKA_TOPIC='user_locations', FORMAT='JSON_SR')
 AS SELECT rowkey as userid,
+  ROWTIME AS timestamp,
   CAST(latitude AS DECIMAL(10,7)) AS latitude,
   CAST(longitude AS DECIMAL(10,7)) AS longitude,
   'Bonifacio-West' AS area
 FROM user_locations_raw;
 
-CREATE STREAM output WITH (KAFKA_TOPIC='output', FORMAT='JSON_SR')
+CREATE STREAM promo_alerts WITH (KAFKA_TOPIC='promo_alerts', VALUE_FORMAT='JSON_SR')
 AS SELECT userloc.userid as userid,
  userloc.area as area,
  userlist.firstname as firstname,
  merchantloc.description as description,
- CAST(GEO_DISTANCE(userloc.latitude, userloc.longitude, merchantloc.latitude, merchantloc.longitude, 'KM')*1000 AS INT) as distance_meters
+ CAST(GEO_DISTANCE(userloc.latitude, userloc.longitude, merchantloc.latitude, merchantloc.longitude, 'KM')*1000 AS INT) as distance_meters,
+ STRUCT("lat" := CAST(userloc.latitude AS DOUBLE),"lon" := CAST(userloc.longitude AS DOUBLE)) AS geopoint,
+ userloc.timestamp as timestamp
 FROM user_locations userloc
 LEFT JOIN users userlist on userloc.userid = userlist.userid
 LEFT JOIN merchant_locations merchantloc on userloc.area = merchantloc.area
 WHERE GEO_DISTANCE(userloc.latitude, userloc.longitude, merchantloc.latitude, merchantloc.longitude, 'KM') < 0.2
-PARTITION BY userloc.userid;
+PARTITION BY null;

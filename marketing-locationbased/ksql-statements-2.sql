@@ -3,6 +3,7 @@ SET 'auto.offset.reset' = 'earliest';
 CREATE OR REPLACE STREAM user_locations
 WITH (KAFKA_TOPIC='user_locations', FORMAT='JSON_SR')
 AS SELECT rowkey as userid,
+  ROWTIME AS timestamp,
   CAST(latitude AS DECIMAL(10,7)) AS latitude,
   CAST(longitude AS DECIMAL(10,7)) AS longitude,
   CASE

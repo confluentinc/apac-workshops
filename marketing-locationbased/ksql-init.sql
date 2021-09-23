@@ -65,3 +65,13 @@ CREATE SOURCE CONNECTOR `datagen_locations` WITH (
   "key.converter.schema.registry.url" = 'http://schema-registry:8081',
   "kafka.topic" = 'user_locations_raw',
   "maxInterval" = '200');
+
+CREATE SINK CONNECTOR `promos_elastic` WITH (
+  "connector.class" = 'io.confluent.connect.elasticsearch.ElasticsearchSinkConnector',
+  "value.converter" = 'io.confluent.connect.json.JsonSchemaConverter',
+  "topics" = 'promo_alerts',
+  "key.ignore" = 'true',
+  "schema.ignore" = 'true',
+  "value.converter.schemas.enable" = 'false',
+  "connection.url" = 'http://elasticsearch:9200',
+  "value.converter.schema.registry.url" = 'http://schema-registry:8081');

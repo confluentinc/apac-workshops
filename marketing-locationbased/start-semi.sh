@@ -30,6 +30,35 @@ cat mysql-init.sql
 docker cp mysql-init.sql mysql:/tmp/cmd.sql
 docker exec -it mysql /bin/bash -c "mysql -u root -pmysql-pw < /tmp/cmd.sql"
 
+# create index template in Elasticsearch
+printf "\n\n================================================================================\n"
+printf "Preparing Elasticsearch index...\n"
+printf "================================================================================\n\n"
+curl -X PUT "localhost:9200/promo_alerts/?pretty" -H 'Content-Type: application/json' -d'
+{
+  "mappings": {
+    "dynamic_templates": [
+    {
+      "dates": {
+        "mapping": {
+          "format": "epoch_millis",
+          "type": "date"
+        },
+        "match": "TIMESTAMP"
+      }
+    },
+    {
+      "locations": {
+        "mapping": {
+          "type": "geo_point"
+        },
+        "match": "*GEOPOINT"
+      }
+    }
+    ]
+  }
+}'
+
 # create CDC connector and datagen connector
 # Datagen generates userid between 1-10 inclusive and locations (lat, long) within
 # (14.546734278498768, 121.04761980788055) and (14.554372672056836, 121.0545504237969)
@@ -48,3 +77,11 @@ do
   printf " (waiting for 200)\n"
   sleep 5
 done
+
+# import Kibana dashboard
+printf "\n\n================================================================================\n"
+printf "Importing Kibana dashboard...\n"
+printf "================================================================================\n\n"
+curl -X POST "http://localhost:5601/api/saved_objects/_import?overwrite=true" -H "kbn-xsrf: true" \
+  -H "securitytenant: global" --form file=@promo-monitoring.ndjson
+printf "\n"
