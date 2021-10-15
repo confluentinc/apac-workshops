@@ -1,6 +1,6 @@
 # Confluent Cloud Logistics ksqlDB Demo
 
-This is a real-time logistics use case demo which uses mainly uses ksqlDB in Confluent Cloud for stream processing. It mainly uses two streams of data from orders and vehicle statuses. The demo showcases Confluent Cloud's features like:
+This is a real-time logistics use case demo which mainly uses ksqlDB in Confluent Cloud for stream processing. It mainly uses two streams of data from orders and vehicle statuses. The demo showcases Confluent Cloud's features like:
 - Real-time order tracking from joins on ksqlDB with streams and tables
 - Masking data from customer orders
 - Schema registry tags on PII columns
