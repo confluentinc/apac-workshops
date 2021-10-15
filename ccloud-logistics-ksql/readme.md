@@ -8,10 +8,13 @@ This is a real-time logistics use case demo which uses mainly uses ksqlDB in Con
 - Tracking vehicles on a map in real time
 
 ## Overall Architecture
+![Architecture](images/architecture.gif)
 
 ## Stream Lineage in action!
+![Stream Lineage](images/stream.png)
 
 ## Real-time delivery tracking with ksqlDB
+![Real-time Tracking](images/order.gif)
 
 # Instructions
 
