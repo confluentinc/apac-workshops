@@ -1,0 +1,47 @@
+{
+  "fields": [
+    {
+      "name": "state",
+      "type": "string"
+    },
+    {
+      "name": "deliveryCode",
+      "type": "string"
+    },
+    {
+      "name": "lat",
+      "type": "double"
+    },
+    {
+      "name": "long",
+      "type": "double"
+    },
+    {
+      "name": "destLat",
+      "type": "double"
+    },
+    {
+      "name": "destLong",
+      "type": "double"
+    },
+    {
+      "name": "warehouseLat",
+      "type": "double"
+    },
+    {
+      "name": "warehouseLong",
+      "type": "double"
+    },
+    {
+      "name": "temperature",
+      "type": "double"
+    },
+    {
+      "name": "tirePressure",
+      "type": "double"
+    }
+  ],
+  "name": "Vehicle",
+  "namespace": "LogisticsDemo",
+  "type": "record"
+}

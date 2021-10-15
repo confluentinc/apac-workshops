@@ -1,0 +1,27 @@
+{
+  "fields": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "email",
+      "type": "string"
+    },
+    {
+      "name": "address",
+      "type": "string"
+    },
+    {
+      "name": "order",
+      "type": "string"
+    },
+    {
+      "name": "order_total",
+      "type": "double"
+    }
+  ],
+  "name": "Order",
+  "namespace": "LogisticsDemo",
+  "type": "record"
+}

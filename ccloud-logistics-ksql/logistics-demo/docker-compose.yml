@@ -1,0 +1,88 @@
+version: "3"
+services:
+  logistics-orders:
+    container_name: logistics-orders
+    hostname: logistics-orders
+    image: jerroldlaw/logistics-demo
+    volumes:
+      - ../env:/home/node/logistics/env
+    restart: always
+    ports:
+      - 3050:3050
+    environment:
+      CONFIG_FILE: ${CONFIG_FILE}
+    command:
+      - bash
+      - -c
+      - |
+        cd /home/node/logistics/orders
+        node server ../env/${CONFIG_FILE}
+        sleep infinity
+
+  logistics-ksql:
+    container_name: logistics-ksql
+    hostname: logistics-ksql
+    image: jerroldlaw/logistics-demo
+    volumes:
+      - ../env:/home/node/logistics/env
+    restart: always
+    ports:
+      - 3000:3000
+    environment:
+      CONFIG_FILE: ${CONFIG_FILE}
+    command:
+      - bash
+      - -c
+      - |
+        cd /home/node/logistics/ksql
+        node server ../env/${CONFIG_FILE}
+        sleep infinity
+
+  logistics-fleet-manager:
+    container_name: logistics-fleet-manager
+    hostname: logistics-fleet-manager
+    image: jerroldlaw/logistics-demo
+    volumes:
+      - ../env:/home/node/logistics/env
+    restart: always
+    environment:
+      CONFIG_FILE: ${CONFIG_FILE}
+    command:
+      - bash
+      - -c
+      - |
+        cd /home/node/logistics/fleet_manager
+        node server ../env/${CONFIG_FILE}
+        sleep infinity
+
+  logistics-fleet:
+    container_name: logistics-fleet
+    hostname: logistics-fleet
+    image: jerroldlaw/logistics-demo
+    volumes:
+      - ../env:/home/node/logistics/env
+    restart: always
+    environment:
+      CONFIG_FILE: ${CONFIG_FILE}
+    command:
+      - bash
+      - -c
+      - |
+        cd /home/node/logistics/fleet
+        ./spawn.sh ../env/${CONFIG_FILE}
+        sleep infinity
+
+  logistics-ui:
+    container_name: logistics-ui
+    hostname: logistics-ui
+    image: jerroldlaw/logistics-demo
+    restart: always
+    ports:
+      - 24601:3000
+    command:
+      - bash
+      - -c
+      - |
+        cd /home/node/logistics/ui
+        npm start
+        sleep infinity
