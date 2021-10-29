@@ -1,0 +1,96 @@
+---
+version: '2'
+services:
+  connect:
+    image: confluentinc/cp-kafka-connect:6.2.0
+    container_name: connect
+    ports:
+      - 8083:8083
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "${BOOTSTRAP_SERVERS}"
+      CONNECT_REST_PORT: 8083
+      CONNECT_LISTENERS: http://0.0.0.0:8083
+      CONNECT_GROUP_ID: "ext-connect-cluster"
+      CONNECT_PRODUCER_CLIENT_ID: "ext-connect-worker-producer"
+      CONNECT_CONFIG_STORAGE_TOPIC: ext-connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: ext-connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: ext-connect-statuses
+      CONNECT_REPLICATION_FACTOR: 3
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 3
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 3
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 3
+      CONNECT_KEY_CONVERTER: "io.confluent.connect.avro.AvroConverter"
+      CONNECT_KEY_CONVERTER_BASIC_AUTH_CREDENTIALS_SOURCE: "USER_INFO"
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO: "${SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO}"
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: "${SCHEMA_REGISTRY_URL}"
+      CONNECT_VALUE_CONVERTER: "io.confluent.connect.avro.AvroConverter"
+      CONNECT_VALUE_CONVERTER_BASIC_AUTH_CREDENTIALS_SOURCE: "USER_INFO"
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO: "${SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO}"
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "${SCHEMA_REGISTRY_URL}"
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_PLUGIN_PATH: "/usr/share/kafka/plugins"
+      CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY: "All"
+      # Connect worker
+      CONNECT_SECURITY_PROTOCOL: SASL_SSL
+      CONNECT_SASL_MECHANISM: PLAIN
+      CONNECT_SASL_JAAS_CONFIG: |
+        org.apache.kafka.common.security.plain.PlainLoginModule required \
+        username="${CLOUD_KEY}" \
+        password="${CLOUD_SECRET}";
+      CONNECT_REQUEST_TIMEOUT_MS: 20000
+      CONNECT_RETRY_BACKOFF_MS: 500
+      # Connect producer
+      CONNECT_PRODUCER_BOOTSTRAP_SERVERS: "${BOOTSTRAP_SERVERS}"
+      CONNECT_PRODUCER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: https
+      CONNECT_PRODUCER_SECURITY_PROTOCOL: SASL_SSL
+      CONNECT_PRODUCER_SASL_MECHANISM: PLAIN
+      CONNECT_PRODUCER_SASL_JAAS_CONFIG: |
+        org.apache.kafka.common.security.plain.PlainLoginModule required \
+        username="${CLOUD_KEY}" \
+        password="${CLOUD_SECRET}";
+      CONNECT_PRODUCER_REQUEST_TIMEOUT_MS: 20000
+      CONNECT_PRODUCER_RETRY_BACKOFF_MS: 500
+      # Connect consumer
+      CONNECT_CONSUMER_BOOTSTRAP_SERVERS: "${BOOTSTRAP_SERVERS}"
+      CONNECT_CONSUMER_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: https
+      CONNECT_CONSUMER_SECURITY_PROTOCOL: SASL_SSL
+      CONNECT_CONSUMER_SASL_MECHANISM: PLAIN
+      CONNECT_CONSUMER_SASL_JAAS_CONFIG: |
+        org.apache.kafka.common.security.plain.PlainLoginModule required \
+        username="${CLOUD_KEY}" \
+        password="${CLOUD_SECRET}";
+      CONNECT_CONSUMER_REQUEST_TIMEOUT_MS: 20000
+      CONNECT_CONSUMER_RETRY_BACKOFF_MS: 500
+      CONNECT_OFFSET_FLUSH_INTERVAL_MS: 10000
+      CONNECT_OFFSET_STORAGE_FILE_FILENAME: /tmp/connect.offsets
+    volumes:
+      - ./confluent-hub-components/:/usr/share/kafka/plugins/
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.0
+    container_name: elasticsearch
+    ports:
+      - 9200:9200
+      - 9300:9300
+    environment:
+      discovery.type: "single-node"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+      cluster.name: "elasticsearch"
+      cluster.routing.allocation.disk.threshold_enabled: "false"
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.10.0
+    container_name: kibana
+    restart: always
+    depends_on:
+      - elasticsearch
+    ports:
+      - 5601:5601
+    environment:
+      NEWSFEED_ENABLED: 'false'
+      TELEMETRY_OPTIN: 'false'
+      TELEMETRY_ENABLED: 'false'
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      SERVER_MAXPAYLOADBYTES: 4194304
+      KIBANA_AUTOCOMPLETETIMEOUT: 3000
+      KIBANA_AUTOCOMPLETETERMINATEAFTER: 2500000
