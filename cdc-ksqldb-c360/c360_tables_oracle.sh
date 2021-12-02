@@ -1,5 +1,6 @@
-drop table custaccount;
-drop table custtransactions;
+echo 'Creating transaction tables'
+
+sqlplus MYUSER/password@//localhost:1521/XE  <<- EOF
 
 create table custaccount (
 	customer_id varchar(10) not null,
@@ -30,3 +31,4 @@ insert into custtransactions (account_id, transaction_amount, transaction_type) 
 commit;
 
 exit;
+

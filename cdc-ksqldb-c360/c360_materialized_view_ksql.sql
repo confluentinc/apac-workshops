@@ -1,5 +1,5 @@
 
-create stream account_stream with (kafka_topic='ORCLCDB.C__MYUSER.CUSTACCOUNT', value_format='avro');
+create stream account_stream with (kafka_topic='XE.MYUSER.CUSTACCOUNT', value_format='avro');
 
 set 'auto.offset.reset'='earliest';
 set 'processing.guarantee' = 'exactly_once';
@@ -16,7 +16,7 @@ CREATE STREAM account_stream_keyed
   PARTITION BY case when op_type = 'R' or op_type = 'I' or op_type = 'U' then account_id else account_id end
   EMIT CHANGES;
 
-create stream transactions_stream with (kafka_topic='ORCLCDB.C__MYUSER.CUSTTRANSACTIONS', value_format='avro');
+create stream transactions_stream with (kafka_topic='XE.MYUSER.CUSTTRANSACTIONS', value_format='avro');
 
 CREATE STREAM transactions_stream_keyed
   WITH(KAFKA_TOPIC='transactions_stream_keyed') AS
@@ -86,8 +86,6 @@ CREATE STREAM address_stream_keyed
   EMIT CHANGES;
 
 
-
-
 create stream c360_stream as
 select
 pr.customer_id as customer_id, pr.first_name, pr.last_name, pr.dob,
@@ -102,12 +100,12 @@ inner join account_master_stream am within 1 hours on pr.customer_id=am.customer
 emit changes;
 
 
-
-create table c360_view as
+create table c360_view with (kafka_topic='c360', format='avro', partitions=1)
+as
 select customer_id, account_id,
 latest_by_offset(first_name, false) as first_name,
 latest_by_offset(last_name, false) as last_name,
-latest_by_offset(dob, false) as dob,
+latest_by_offset(datetostring(dob, 'yyyy-MM-dd')) as dob,
 latest_by_offset(phone_type, false) as phone_type,
 latest_by_offset(phone_num, false) as phone_num,
 latest_by_offset(address_line_1, false) as address_line_1,
@@ -115,8 +113,9 @@ latest_by_offset(address_line_2, false) as address_line_2,
 latest_by_offset(pin, false) as pin,
 latest_by_offset(address_type, false) as address_type,
 latest_by_offset(account_type, false) as account_type,
-latest_by_offset(account_opening_date, false) as account_opening_date,
+latest_by_offset(format_date(account_opening_date, 'yyyy-MM-dd'), false) as account_opening_date,
 sum(transaction_amount) as account_balance
 from c360_stream
 group by customer_id, account_id
 emit changes;
+

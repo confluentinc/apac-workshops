@@ -3,17 +3,13 @@ version: '3.5'
 services:
 
   oracle:
-    image: wnameless/oracle-xe-11g-r2
+    image: store/oracle/database-enterprise:12.2.0.1
     hostname: oracle
     container_name: oracle
     ports:
       - "1521:1521"
     volumes:
-      - ./01_init.sql:/docker-entrypoint-initdb.d/01_init.sql
-      - ./02_init.sql:/docker-entrypoint-initdb.d/02_init.sql
-      - ./c360_tables_oracle.sh:/docker-entrypoint-initdb.d/c360_tables_oracle.sh
-    environment:
-      ORACLE_ALLOW_REMOTE: "true"
+      - /Users/naveen.nandan/Software/Projects/oracle12c-docker/data:/ORCL
 
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2017-latest
@@ -28,7 +24,7 @@ services:
       SA_PASSWORD: "Password!"
 
   zookeeper:
-    image: confluentinc/cp-zookeeper:6.2.0
+    image: confluentinc/cp-zookeeper:5.5.2
     hostname: zookeeper
     container_name: zookeeper
     restart: always
@@ -38,7 +34,7 @@ services:
       KAFKA_OPTS: -Dzookeeper.4lw.commands.whitelist=*
 
   broker:
-    image: confluentinc/cp-server:6.2.0
+    image: confluentinc/cp-enterprise-kafka:5.5.2
     hostname: broker
     container_name: broker
     restart: always
@@ -53,8 +49,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
       # Confluent Metrics Reporter for Control Center Cluster Monitoring
-      KAFKA_METRIC_REPORTERS: io.confluent.telemetry.reporter.TelemetryReporter
-      
+      KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
       CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: broker:9092
       CONFLUENT_METRICS_REPORTER_TOPIC_REPLICAS: 1
       CONFLUENT_METRICS_ENABLE: 'true'
@@ -63,15 +58,14 @@ services:
       # for 6.0.0
       KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
       # For Confluent Telemetry Reporter (proactive support)
-      #KAFKA_CONFLUENT_TELEMETRY_ENABLED: 'true'
-      #KAFKA_CONFLUENT_TELEMETRY_API_KEY: '46VYG3BWETBRE4VA'
-      #KAFKA_CONFLUENT_TELEMETRY_API_SECRET: 'Dt/i4chPc21PvwUSgmg6R2KenLoKLo41jGObjgSTKQfpVyVe8paMNJzDC+3/QZwP'
+      # KAFKA_CONFLUENT_TELEMETRY_ENABLED: 'true'
+      # KAFKA_CONFLUENT_TELEMETRY_API_KEY: '<CLOUD_API_KEY>'
+      # KAFKA_CONFLUENT_TELEMETRY_API_SECRET: '<CLOUD_API_SECRET>'
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      
 
   schema-registry:
-    image: confluentinc/cp-schema-registry:6.2.0
+    image: confluentinc/cp-schema-registry:5.5.2
     hostname: schema-registry
     container_name: schema-registry
     restart: always
@@ -84,10 +78,12 @@ services:
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: broker:9092
 
-  connect-source:
-    image: confluentinc/cp-kafka-connect:6.2.0
-    hostname: connect-source
-    container_name: connect-source
+  connect-1:
+    extra_hosts:
+      - "dockerhost:$DOCKERHOST"
+    image: confluentinc/cp-kafka-connect:5.5.2
+    hostname: connect-1
+    container_name: connect-1
     restart: always
     depends_on:
       - zookeeper
@@ -97,36 +93,31 @@ services:
       - sqlserver
     ports:
       - "8083:8083"
-      - "5454:5454"
     environment:
       CONNECT_BOOTSTRAP_SERVERS: 'broker:9092'
-      CONNECT_REST_ADVERTISED_HOST_NAME: connect-source
-      CONNECT_REST_PORT: 8083
-      CONNECT_GROUP_ID: "connect-source"
-      CONNECT_PRODUCER_CLIENT_ID: "connect-worker-producer-source"
-      CONNECT_CONFIG_STORAGE_TOPIC: connect-configs-source
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect-1
+      CONNECT_GROUP_ID: "connect-cluster-1"
+      CONNECT_PRODUCER_CLIENT_ID: "connect-worker-producer-1"
+      CONNECT_CONFIG_STORAGE_TOPIC: connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: connect-status
       CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
-      CONNECT_OFFSET_FLUSH_INTERVAL_MS: 10000
-      CONNECT_OFFSET_STORAGE_TOPIC: connect-offsets-source
       CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
-      CONNECT_STATUS_STORAGE_TOPIC: connect-status-source
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
-      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
-      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
-      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      CONNECT_VALUE_CONVERTER: "io.confluent.connect.avro.AvroConverter"
       CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-      CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
-      CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY: All
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://broker:8081"
       CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
       CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
       CONNECT_PLUGIN_PATH: /usr/share/confluent-hub-components
-      CONNECT_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
-      CONNECT_PRODUCER_CONFLUENT_MONITORING_INTERCEPTOR_BOOTSTRAP_SERVERS: broker:9092
-      CONNECT_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
-      CONNECT_CONSUMER_CONFLUENT_MONITORING_INTERCEPTOR_BOOTSTRAP_SERVERS: broker:9092
-      CONNECT_LOG4J_ROOT_LOGLEVEL: INFO,ERROR
+      # CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
+      # Confluent Monitoring Interceptors for Control Center Streams Monitoring
+      # CONNECT_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
+      # CONNECT_PRODUCER_CONFLUENT_MONITORING_INTERCEPTOR_BOOTSTRAP_SERVERS: broker:9092
+      # CONNECT_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
+      # CONNECT_CONSUMER_CONFLUENT_MONITORING_INTERCEPTOR_BOOTSTRAP_SERVERS: broker:9092
+      # CONNECT_LOG4J_ROOT_LOGLEVEL: DEBUG
       CONNECT_TOPIC_CREATION_ENABLE: 'true'
     command: 
       - bash 
@@ -134,9 +125,62 @@ services:
       - |
         #
         echo "Installing connector plugins"
-        confluent-hub install --no-prompt confluentinc/kafka-connect-oracle-cdc:1.4.0
+        confluent-hub install --no-prompt confluentinc/kafka-connect-oracle-cdc:1.0.3
         sleep 10
-        confluent-hub install --no-prompt debezium/debezium-connector-sqlserver:1.7.1
+        #
+        echo "Launching Kafka Connect worker"
+        /etc/confluent/docker/run & 
+        #
+        sleep infinity
+
+  connect-2:
+    extra_hosts:
+      - "dockerhost:$DOCKERHOST"
+    image: confluentinc/cp-kafka-connect:5.5.2
+    hostname: connect-2
+    container_name: connect-2
+    restart: always
+    depends_on:
+      - zookeeper
+      - broker
+      - schema-registry
+      - oracle
+      - sqlserver
+    ports:
+      - "8084:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: 'broker:9092'
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect-2
+      CONNECT_GROUP_ID: "connect-cluster-2"
+      CONNECT_PRODUCER_CLIENT_ID: "connect-worker-producer-2"
+      CONNECT_CONFIG_STORAGE_TOPIC: connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
+      CONNECT_VALUE_CONVERTER: "io.confluent.connect.avro.AvroConverter"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://broker:8081"
+      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_PLUGIN_PATH: /usr/share/confluent-hub-components
+      # CONNECT_LOG4J_LOGGERS: org.apache.zookeeper=ERROR,org.I0Itec.zkclient=ERROR,org.reflections=ERROR
+      # Confluent Monitoring Interceptors for Control Center Streams Monitoring
+      # CONNECT_PRODUCER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
+      # CONNECT_PRODUCER_CONFLUENT_MONITORING_INTERCEPTOR_BOOTSTRAP_SERVERS: broker:9092
+      # CONNECT_CONSUMER_INTERCEPTOR_CLASSES: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
+      # CONNECT_CONSUMER_CONFLUENT_MONITORING_INTERCEPTOR_BOOTSTRAP_SERVERS: broker:9092
+      # CONNECT_LOG4J_ROOT_LOGLEVEL: DEBUG
+      CONNECT_TOPIC_CREATION_ENABLE: 'true'
+    command: 
+      - bash 
+      - -c 
+      - |
+        #
+        echo "Installing connector plugins"
+        confluent-hub install --no-prompt debezium/debezium-connector-sqlserver:1.3.1
         sleep 10
         #
         echo "Launching Kafka Connect worker"
@@ -145,12 +189,13 @@ services:
         sleep infinity
 
   ksqldb-server:
-    image: confluentinc/ksqldb-server:0.21.0
+    image: confluentinc/ksqldb-server:0.14.0
     hostname: ksqldb-server
     container_name: ksqldb-server
     depends_on:
       - broker
-      - connect-source
+      - connect-1
+      - connect-2
     ports:
       - "8088:8088"
     environment:
@@ -164,11 +209,12 @@ services:
       # KSQL_KSQL_STREAMS_PROCESSING_GUARANTEE=exactly_once
 
   ksqldb-cli:
-    image: confluentinc/ksqldb-cli:0.21.0
+    image: confluentinc/ksqldb-cli:0.14.0
     container_name: ksqldb-cli
     depends_on:
       - broker
-      - connect-source
+      - connect-1
+      - connect-2
       - ksqldb-server
     # docker exec -it ksqldb-cli ksql http://ksqldb-server:8088
     entrypoint: /bin/sh
@@ -177,7 +223,7 @@ services:
       - $PWD:/data/scripts
 
   control-center:
-    image: confluentinc/cp-enterprise-control-center:6.2.0
+    image: confluentinc/cp-enterprise-control-center:5.5.2
     hostname: control-center
     container_name: control-center
     restart: always
@@ -185,7 +231,8 @@ services:
       - zookeeper
       - broker
       - schema-registry
-      - connect-source
+      - connect-1
+      - connect-2
     ports:
       - "9021:9021"
     environment:
