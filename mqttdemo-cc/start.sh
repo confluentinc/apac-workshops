@@ -2,7 +2,7 @@
 
 source ./ccloud_library.sh
 source ./helper.sh
-ccloud login --save
+confluent login --save
 
 export CLUSTER_CLOUD=gcp
 export CLUSTER_REGION=asia-southeast1
@@ -10,9 +10,9 @@ export CHECK_CREDIT_CARD=false
 export EXAMPLE="kafkageodemo"
 
 ccloud::create_ccloud_stack true
-export SERVICE_ACCOUNT_ID=$(ccloud kafka cluster list -o json | jq -r '.[0].name' | awk -F'-' '{print $4;}')
+export SERVICE_ACCOUNT_ID=$(confluent kafka cluster list -o json | jq -r '.[0].name' | awk -F'-' '{print $4 "-" $5;}')
 export CONFIG_FILE=stack-configs/java-service-account-$SERVICE_ACCOUNT_ID.config
-export CCLOUD_CLUSTER_ID=$(ccloud kafka cluster list -o json | jq -c -r '.[] | select (.name == "'"demo-kafka-cluster-$SERVICE_ACCOUNT_ID"'")' | jq -r .id)
+export CCLOUD_CLUSTER_ID=$(confluent kafka cluster list -o json | jq -c -r '.[] | select (.name == "'"demo-kafka-cluster-$SERVICE_ACCOUNT_ID"'")' | jq -r .id)
 
 ccloud::generate_configs $CONFIG_FILE
 source delta_configs/env.delta
@@ -21,7 +21,7 @@ echo
 echo "Sleep an additional 90s to wait for all Confluent Cloud metadata to propagate"
 sleep 90
 
-ccloud kafka topic create bus_raw --partitions 1 --config="retention.ms=3600000"
+confluent kafka topic create bus_raw --partitions 1 --config="retention.ms=3600000"
 
 docker-compose up -d
 
@@ -30,9 +30,9 @@ echo "Waiting up to $MAX_WAIT seconds for Confluent Cloud ksqlDB cluster to be U
 retry $MAX_WAIT ccloud::validate_ccloud_ksqldb_endpoint_ready $KSQLDB_ENDPOINT
 echo
 echo "Writing ksqlDB queries in Confluent Cloud"
-ksqlDBAppId=$(ccloud ksql app list | grep "$KSQLDB_ENDPOINT" | awk '{print $1}')
-ccloud ksql app describe $ksqlDBAppId -o json
-ccloud ksql app configure-acls $ksqlDBAppId bus_raw
+ksqlDBAppId=$(confluent ksql app list | grep "$KSQLDB_ENDPOINT" | awk '{print $1}')
+confluent ksql app describe $ksqlDBAppId -o json
+confluent ksql app configure-acls $ksqlDBAppId bus_raw
 
 printf "\n\n================================================================================\n"
 printf "Creating MQTT source connector...\n"
