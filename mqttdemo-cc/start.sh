@@ -4,8 +4,8 @@ source ./ccloud_library.sh
 source ./helper.sh
 confluent login --save
 
-export CLUSTER_CLOUD=gcp
-export CLUSTER_REGION=asia-southeast1
+export CLUSTER_CLOUD=${CLUSTER_CLOUD:-gcp}
+export CLUSTER_REGION=${CLUSTER_REGION:-asia-southeast1}
 export CHECK_CREDIT_CARD=false
 export EXAMPLE="kafkageodemo"
 
