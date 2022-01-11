@@ -7,6 +7,7 @@ confluent login --save
 export CLUSTER_CLOUD=${CLUSTER_CLOUD:-gcp}
 export CLUSTER_REGION=${CLUSTER_REGION:-asia-southeast1}
 export CHECK_CREDIT_CARD=false
+export KSQL_CSU=${KSQL_CSU:-4}
 export EXAMPLE="kafkageodemo"
 
 ccloud::create_ccloud_stack true
