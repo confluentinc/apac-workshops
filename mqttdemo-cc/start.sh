@@ -7,7 +7,7 @@ confluent login --save
 export CLUSTER_CLOUD=${CLUSTER_CLOUD:-gcp}
 export CLUSTER_REGION=${CLUSTER_REGION:-asia-southeast1}
 export CHECK_CREDIT_CARD=false
-export KSQL_CSU=${KSQL_CSU:-4}
+export KSQL_CSU=${KSQL_CSU:-1}
 export EXAMPLE="kafkageodemo"
 
 ccloud::create_ccloud_stack true
@@ -30,33 +30,33 @@ MAX_WAIT=720
 echo "Waiting up to $MAX_WAIT seconds for Confluent Cloud ksqlDB cluster to be UP"
 retry $MAX_WAIT ccloud::validate_ccloud_ksqldb_endpoint_ready $KSQLDB_ENDPOINT
 echo
-echo "Writing ksqlDB queries in Confluent Cloud"
-ksqlDBAppId=$(confluent ksql app list | grep "$KSQLDB_ENDPOINT" | awk '{print $1}')
-confluent ksql app describe $ksqlDBAppId -o json
-confluent ksql app configure-acls $ksqlDBAppId bus_raw
 
 printf "\n\n================================================================================\n"
 printf "Creating MQTT source connector...\n"
 printf "================================================================================\n\n"
-DATA=$( cat << EOF
+cat > mqtt-source.json << EOF
 {
-  "connector.class": "io.confluent.connect.mqtt.MqttSourceConnector",
-  "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
-  "mqtt.server.uri": "tcp://mqtt.hsl.fi:1883",
-  "mqtt.clean.session.enabled": "false",
-  "kafka.topic": "bus_raw",
-  "mqtt.topics": "/hfp/v2/journey/ongoing/vp/bus/#",
-  "confluent.topic.bootstrap.servers": "${BOOTSTRAP_SERVERS}",
-  "confluent.topic.sasl.jaas.config": "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"${CLOUD_KEY}\" password=\"${CLOUD_SECRET}\";",
-  "confluent.topic.security.protocol": "SASL_SSL",
-  "confluent.topic.sasl.mechanism": "PLAIN"
+  "name": "mqtt-source",
+  "config": {
+    "connector.class": "MqttSource",
+    "name": "mqtt-source",
+    "kafka.auth.mode": "KAFKA_API_KEY",
+    "kafka.api.key": "${CLOUD_KEY}",
+    "kafka.api.secret": "${CLOUD_SECRET}",
+    "kafka.topic": "bus_raw",
+    "mqtt.server.uri": "tcp://mqtt.hsl.fi:1883",
+    "mqtt.clean.session.enabled": "false",
+    "mqtt.topics": "/hfp/v2/journey/ongoing/vp/bus/#",
+    "tasks.max": "1"
+  }
 }
 EOF
-)
-curl -X PUT \
--H "Content-Type:application/json" \
---data "${DATA}" http://localhost:8083/connectors/mqtt-source/config | jq
-printf "\n"
+confluent connect create --config ./mqtt-source.json --cluster ${CCLOUD_CLUSTER_ID}
+
+echo "Writing ksqlDB queries in Confluent Cloud"
+ksqlDBAppId=$(confluent ksql app list | grep "$KSQLDB_ENDPOINT" | awk '{print $1}')
+confluent ksql app describe $ksqlDBAppId -o json
+confluent ksql app configure-acls $ksqlDBAppId bus_raw
 
 while read ksqlCmd; do
   echo -e "\n$ksqlCmd\n"
