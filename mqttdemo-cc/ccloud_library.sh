@@ -19,7 +19,7 @@
 #
 #   1. Community support via https://github.com/confluentinc/examples/issues
 #   2. There are no guarantees for backwards compatibility
-#   3. PRs welcome ;) 
+#   3. PRs welcome ;)
 ################################################################
 
 
@@ -28,7 +28,7 @@
 # --------------------------------------------------------------
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
-CLI_MIN_VERSION=${CLI_MIN_VERSION:-2.2.0}
+CLI_MIN_VERSION=${CLI_MIN_VERSION:-2.5.0}
 
 # --------------------------------------------------------------
 # Library
@@ -332,7 +332,7 @@ function ccloud::find_cluster() {
   local FOUND_CLUSTER=$(confluent kafka cluster list -o json | jq -c -r '.[] | select((.name == "'"$CLUSTER_NAME"'") and (.provider == "'"$CLUSTER_CLOUD"'") and (.region == "'"$CLUSTER_REGION"'"))')
   [[ ! -z "$FOUND_CLUSTER" ]] && {
       echo "$FOUND_CLUSTER" | jq -r .id
-      return 0 
+      return 0
     } || {
       return 1
     }
@@ -343,10 +343,10 @@ function ccloud::create_and_use_cluster() {
   CLUSTER_CLOUD=$2
   CLUSTER_REGION=$3
 
-  OUTPUT=$(confluent kafka cluster create "$CLUSTER_NAME" --cloud $CLUSTER_CLOUD --region $CLUSTER_REGION 2>&1)
+  OUTPUT=$(confluent kafka cluster create "$CLUSTER_NAME" --cloud $CLUSTER_CLOUD --region $CLUSTER_REGION --output json 2>&1)
   (($? != 0)) && { echo "$OUTPUT"; exit 1; }
-  CLUSTER=$(echo "$OUTPUT" | grep '| Id' | awk '{print $4;}')
-  confluent kafka cluster use $CLUSTER
+  CLUSTER=$(echo "$OUTPUT" | jq -r .id)
+  confluent kafka cluster use $CLUSTER 2>/dev/null
   echo $CLUSTER
 
   return 0
@@ -383,7 +383,7 @@ function ccloud::create_service_account() {
 }
 
 function ccloud:get_service_account_from_current_cluster_name() {
-  SERVICE_ACCOUNT_ID=$(confluent kafka cluster list -o json | jq -r '.[0].name' | awk -F'-' '{print $4 "-" $5;}')
+  SERVICE_ACCOUNT_ID=$(confluent kafka cluster describe -o json | jq -r '.name' | awk -F'-' '{print $4 "-" $5;}')
 
   echo $SERVICE_ACCOUNT_ID
 
@@ -409,7 +409,7 @@ function ccloud::find_credentials_resource() {
   local FOUND_COUNT=$(echo "$FOUND_CRED" | jq 'length')
   [[ $FOUND_COUNT -ne 0 ]] && {
       echo "$FOUND_CRED" | jq -r '.[0].key'
-      return 0 
+      return 0
     } || {
       return 1
     }
@@ -435,10 +435,10 @@ function ccloud::create_credentials_resource() {
 function ccloud::maybe_create_credentials_resource() {
   SERVICE_ACCOUNT_ID=$1
   RESOURCE=$2
-  
+
   local KEY=$(ccloud::find_credentials_resource $SERVICE_ACCOUNT_ID $RESOURCE)
   [[ -z $KEY ]] && {
-    ccloud::create_credentials_resource $SERVICE_ACCOUNT_ID $RESOURCE
+    ccloud::create_credentials_resource $SERVICE_ACCOUNT_ID $RESOURCE || exit 1
   } || {
     echo "$KEY:"; # the secret cannot be retrieved from a found key, caller needs to handle this
     return 0
@@ -449,11 +449,11 @@ function ccloud::find_ksqldb_app() {
   KSQLDB_NAME=$1
   CLUSTER=$2
 
-  local FOUND_APP=$(confluent ksql app list -o json | jq -c -r 'map(select((.name == "'"$KSQLDB_NAME"'") and (.kafka == "'"$CLUSTER"'")))')
+  local FOUND_APP=$(confluent ksql cluster list -o json | jq -c -r 'map(select((.name == "'"$KSQLDB_NAME"'") and (.kafka == "'"$CLUSTER"'")))')
   local FOUND_COUNT=$(echo "$FOUND_APP" | jq 'length')
   [[ $FOUND_COUNT -ne 0 ]] && {
       echo "$FOUND_APP" | jq -r '.[].id'
-      return 0 
+      return 0
     } || {
       return 1
     }
@@ -467,7 +467,7 @@ function ccloud::create_ksqldb_app() {
   local kafka_api_key=$(echo $ksqlDB_kafka_creds | cut -d':' -f1)
   local kafka_api_secret=$(echo $ksqlDB_kafka_creds | cut -d':' -f2)
 
-  KSQLDB=$(confluent ksql app create --cluster $CLUSTER --csu $KSQL_CSU --api-key "$kafka_api_key" --api-secret "$kafka_api_secret" -o json "$KSQLDB_NAME" | jq -r ".id")
+  KSQLDB=$(confluent ksql cluster create --cluster $CLUSTER --api-key "$kafka_api_key" --api-secret "$kafka_api_secret" --csu 1 -o json "$KSQLDB_NAME" | jq -r ".id")
   echo $KSQLDB
 
   return 0
@@ -477,7 +477,7 @@ function ccloud::maybe_create_ksqldb_app() {
   CLUSTER=$2
   # colon deliminated credentials (APIKEY:APISECRET)
   local ksqlDB_kafka_creds=$3
-  
+
   APP_ID=$(ccloud::find_ksqldb_app $KSQLDB_NAME $CLUSTER)
   if [ $? -eq 0 ]
   then
@@ -511,7 +511,7 @@ function ccloud::create_acls_all_resources_full_access() {
 
   confluent kafka acl create --allow --service-account $SERVICE_ACCOUNT_ID --operation DESCRIBE --transactional-id '*' &>"$REDIRECT_TO"
   confluent kafka acl create --allow --service-account $SERVICE_ACCOUNT_ID --operation WRITE --transactional-id '*' &>"$REDIRECT_TO"
-  
+
   confluent kafka acl create --allow --service-account $SERVICE_ACCOUNT_ID --operation IDEMPOTENT-WRITE --cluster-scope &>"$REDIRECT_TO"
   confluent kafka acl create --allow --service-account $SERVICE_ACCOUNT_ID --operation DESCRIBE --cluster-scope &>"$REDIRECT_TO"
 
@@ -549,6 +549,55 @@ function ccloud::delete_acls_ccloud_stack() {
   return 0
 }
 
+
+# ccloud::set_cli_from_config_file enables users to switch between multiple Confluent Cloud clusters
+# generated by ccloud-stack
+function ccloud::set_cli_from_config_file() {
+  [ -z "$1" ] && {
+    echo "ccloud::validate_ccloud_config expects one parameter (configuration file with Confluent Cloud connection information)"
+    exit 1
+  }
+
+  local cfg_file="$1"
+  ccloud::validate_logged_in_cli
+  ccloud::validate_ccloud_config $cfg_file
+  ccloud::generate_configs $cfg_file
+  source delta_configs/env.delta
+  ccloud::set_cli_from_env_params
+
+  return 0
+}
+
+
+
+# ccloud::set_cli_from_env_params enables users to switch between multiple Confluent Cloud clusters
+# The provided credentials must have appropriate authorization already set
+# - ENVIRONMENT_ID
+# - KAFKA_CLUSTER_ID
+# - CLOUD_KEY
+# - CLOUD_SECRET
+function ccloud::set_cli_from_env_params() {
+
+  # Check minimum parameters
+  if [[ -z "$ENVIRONMENT_ID" || \
+           "$ENVIRONMENT_ID" == -1 || \
+        -z "$KAFKA_CLUSTER_ID" || \
+           "$KAFKA_CLUSTER_ID" == -1 || \
+        -z "$CLOUD_KEY" || \
+        -z "$CLOUD_SECRET" ]]; then
+     echo "ERROR: Missing at least one environment parameter.  Please troubleshoot and run again."
+     return 1
+  fi
+
+  confluent environment use $ENVIRONMENT_ID
+  confluent kafka cluster use $KAFKA_CLUSTER_ID
+  confluent api-key store "$CLOUD_KEY" "$CLOUD_SECRET" --resource ${KAFKA_CLUSTER_ID}
+  confluent api-key use "$CLOUD_KEY" --resource ${KAFKA_CLUSTER_ID}
+
+  return 0
+
+}
+
 function ccloud::validate_ccloud_config() {
   [ -z "$1" ] && {
     echo "ccloud::validate_ccloud_config expects one parameter (configuration file with Confluent Cloud connection information)"
@@ -576,7 +625,7 @@ function ccloud::validate_ksqldb_up() {
 
   ccloud::validate_logged_in_cli || exit 1
 
-  local ksqldb_meta=$(confluent ksql app list -o json | jq -r 'map(select(.endpoint == "'"$ksqldb_endpoint"'")) | .[]')
+  local ksqldb_meta=$(confluent ksql cluster list -o json | jq -r 'map(select(.endpoint == "'"$ksqldb_endpoint"'")) | .[]')
 
   local ksqldb_appid=$(echo "$ksqldb_meta" | jq -r '.id')
   if [[ "$ksqldb_appid" == "" ]]; then
@@ -638,7 +687,7 @@ function ccloud::create_connector() {
 
   echo -e "\nCreating connector from $file\n"
 
-  # About the Confluent Cloud CLI command 'confluent connect create':
+  # About the Confluent CLI command 'confluent connect create':
   # - Typical usage of this CLI would be 'confluent connect create --config <filename>'
   # - However, in this example, the connector's configuration file contains parameters that need to be first substituted
   #   so the CLI command includes eval and heredoc.
@@ -675,11 +724,7 @@ function ccloud::wait_for_connector_up() {
 function ccloud::validate_ccloud_ksqldb_endpoint_ready() {
   KSQLDB_ENDPOINT=$1
 
-  ksqlDBAppId=$(confluent ksql app list | grep "$KSQLDB_ENDPOINT" | awk '{print $1}')
-  if [[ "$ksqlDBAppId" == "" ]]; then
-    return 1
-  fi
-  STATUS=$(confluent ksql app describe $ksqlDBAppId | grep "Status" | grep UP)
+  STATUS=$(confluent ksql cluster list -o json | jq -r 'map(select(.endpoint == "'"$KSQLDB_ENDPOINT"'")) | .[].status' | grep UP)
   if [[ "$STATUS" == "" ]]; then
     return 1
   fi
@@ -820,19 +865,19 @@ function ccloud::create_acls_connect_topics() {
   confluent kafka topic create $TOPIC --partitions 6 --config "cleanup.policy=compact"
   confluent kafka acl create --allow --service-account $serviceAccount --operation WRITE --topic $TOPIC --prefix
   confluent kafka acl create --allow --service-account $serviceAccount --operation READ --topic $TOPIC --prefix
-  
-  TOPIC=connect-demo-statuses 
+
+  TOPIC=connect-demo-statuses
   confluent kafka topic create $TOPIC --partitions 3 --config "cleanup.policy=compact"
   confluent kafka acl create --allow --service-account $serviceAccount --operation WRITE --topic $TOPIC --prefix
   confluent kafka acl create --allow --service-account $serviceAccount --operation READ --topic $TOPIC --prefix
-  
+
 
   for TOPIC in _confluent-monitoring _confluent-command ; do
     confluent kafka topic create $TOPIC &>/dev/null
     confluent kafka acl create --allow --service-account $serviceAccount --operation WRITE --topic $TOPIC --prefix
     confluent kafka acl create --allow --service-account $serviceAccount --operation READ --topic $TOPIC --prefix
   done
- 
+
   confluent kafka acl create --allow --service-account $serviceAccount --operation READ --consumer-group connect-cloud
 
   echo "Connectors: creating topics and ACLs for service account $serviceAccount"
@@ -901,6 +946,25 @@ function ccloud::set_kafka_cluster_use() {
 }
 
 
+function ccloud::maybe_create_and_use_environment() {
+
+  ENVIRONMENT_NAME=$1
+
+  if [[ -z "$ENVIRONMENT" ]];
+  then
+    ENVIRONMENT=$(ccloud::create_and_use_environment $ENVIRONMENT_NAME)
+    (($? != 0)) && { echo "$ENVIRONMENT"; exit 1; }
+  else
+    confluent environment use $ENVIRONMENT || exit 1
+  fi
+
+  echo "$ENVIRONMENT"
+
+  return 0
+
+}
+
+
 #
 # ccloud-stack documentation:
 # https://docs.confluent.io/platform/current/tutorials/examples/ccloud/docs/ccloud-stack.html
@@ -912,7 +976,7 @@ function ccloud::create_ccloud_stack() {
   REPLICATION_FACTOR=${REPLICATION_FACTOR:-3}
   enable_ksqldb=${1:-false}
   EXAMPLE=${EXAMPLE:-ccloud-stack-function}
-  CHECK_CREDIT_CARD="${CHECK_CREDIT_CARD:-true}"
+  CHECK_CREDIT_CARD="${CHECK_CREDIT_CARD:-false}"
 
   # Check if credit card is on file, which is required for cluster creation
   if $CHECK_CREDIT_CARD && [[ $(confluent admin payment describe) =~ "not found" ]]; then
@@ -935,15 +999,8 @@ function ccloud::create_ccloud_stack() {
 
   echo "Creating Confluent Cloud stack for service account $SERVICE_NAME, ID: $SERVICE_ACCOUNT_ID."
 
-  if [[ -z "$ENVIRONMENT" ]]; 
-  then
-    # Environment is not received so it will be created
-    ENVIRONMENT_NAME=${ENVIRONMENT_NAME:-"ccloud-stack-$SERVICE_ACCOUNT_ID-$EXAMPLE"}
-    ENVIRONMENT=$(ccloud::create_and_use_environment $ENVIRONMENT_NAME)
-    (($? != 0)) && { echo "$ENVIRONMENT"; exit 1; }
-  else
-    confluent environment use $ENVIRONMENT || exit 1
-  fi
+  ENVIRONMENT_NAME=${ENVIRONMENT_NAME:-"ccloud-stack-$SERVICE_ACCOUNT_ID-$EXAMPLE"}
+  ENVIRONMENT=$(ccloud::maybe_create_and_use_environment "$ENVIRONMENT_NAME")
 
   CLUSTER_NAME=${CLUSTER_NAME:-"demo-kafka-cluster-$SERVICE_ACCOUNT_ID"}
   CLUSTER_CLOUD="${CLUSTER_CLOUD:-aws}"
@@ -956,8 +1013,16 @@ function ccloud::create_ccloud_stack() {
     exit 1
   fi
 
+  # Sometimes bootstrap.servers is empty so testing a sleep
+  sleep 3
+
   BOOTSTRAP_SERVERS=$(confluent kafka cluster describe $CLUSTER -o json | jq -r ".endpoint" | cut -c 12-)
   CLUSTER_CREDS=$(ccloud::maybe_create_credentials_resource $SERVICE_ACCOUNT_ID $CLUSTER)
+  if [[ "$CLUSTER_CREDS" == "" ]] ; then
+    echo "Credentials are empty"
+    echo "ERROR: Could not create credentials."
+    exit 1
+  fi
 
   MAX_WAIT=720
   echo ""
@@ -966,8 +1031,8 @@ function ccloud::create_ccloud_stack() {
 
   # Estimating another 80s wait still sometimes required
   WARMUP_TIME=${WARMUP_TIME:-80}
-  echo "Sleeping an additional ${WARMUP_TIME} seconds to ensure propagation of all metadata"
-  sleep $WARMUP_TIME 
+  echo -e "Sleeping an additional ${WARMUP_TIME} seconds to ensure propagation of all metadata\n"
+  sleep $WARMUP_TIME
 
   ccloud::create_acls_all_resources_full_access $SERVICE_ACCOUNT_ID
 
@@ -975,13 +1040,13 @@ function ccloud::create_ccloud_stack() {
   SCHEMA_REGISTRY=$(ccloud::enable_schema_registry $CLUSTER_CLOUD $SCHEMA_REGISTRY_GEO)
   SCHEMA_REGISTRY_ENDPOINT=$(confluent schema-registry cluster describe -o json | jq -r ".endpoint_url")
   SCHEMA_REGISTRY_CREDS=$(ccloud::maybe_create_credentials_resource $SERVICE_ACCOUNT_ID $SCHEMA_REGISTRY)
-  
+
   if $enable_ksqldb ; then
     KSQLDB_NAME=${KSQLDB_NAME:-"demo-ksqldb-$SERVICE_ACCOUNT_ID"}
     KSQLDB=$(ccloud::maybe_create_ksqldb_app "$KSQLDB_NAME" $CLUSTER "$CLUSTER_CREDS")
-    KSQLDB_ENDPOINT=$(confluent ksql app describe $KSQLDB -o json | jq -r ".endpoint")
+    KSQLDB_ENDPOINT=$(confluent ksql cluster describe $KSQLDB -o json | jq -r ".endpoint")
     KSQLDB_CREDS=$(ccloud::maybe_create_credentials_resource $SERVICE_ACCOUNT_ID $KSQLDB)
-    confluent ksql app configure-acls $KSQLDB
+    confluent ksql cluster configure-acls $KSQLDB
   fi
 
   CLOUD_API_KEY=`echo $CLUSTER_CREDS | awk -F: '{print $1}'`
@@ -993,15 +1058,15 @@ function ccloud::create_ccloud_stack() {
       mkdir -p stack-configs
       CONFIG_FILE="stack-configs/java-service-account-$SERVICE_ACCOUNT_ID.config"
     fi
-  
+
     cat <<EOF > $CONFIG_FILE
 # --------------------------------------
 # Confluent Cloud connection information
 # --------------------------------------
-# ENVIRONMENT ID: ${ENVIRONMENT}
-# SERVICE ACCOUNT ID: ${SERVICE_ACCOUNT_ID}
-# KAFKA CLUSTER ID: ${CLUSTER}
-# SCHEMA REGISTRY CLUSTER ID: ${SCHEMA_REGISTRY}
+# ENVIRONMENT_ID=${ENVIRONMENT}
+# SERVICE_ACCOUNT_ID=${SERVICE_ACCOUNT_ID}
+# KAFKA_CLUSTER_ID=${CLUSTER}
+# SCHEMA_REGISTRY_CLUSTER_ID=${SCHEMA_REGISTRY}
 EOF
     if $enable_ksqldb ; then
       cat <<EOF >> $CONFIG_FILE
@@ -1053,7 +1118,7 @@ function ccloud::destroy_ccloud_stack() {
 
   # Setting default QUIET=false to surface potential errors
   QUIET="${QUIET:-false}"
-  [[ $QUIET == "true" ]] && 
+  [[ $QUIET == "true" ]] &&
     local REDIRECT_TO="/dev/null" ||
     local REDIRECT_TO="/dev/tty"
 
@@ -1062,10 +1127,10 @@ function ccloud::destroy_ccloud_stack() {
   # Delete associated ACLs
   ccloud::delete_acls_ccloud_stack $SERVICE_ACCOUNT_ID
 
-  ksqldb_id_found=$(confluent ksql app list -o json | jq -r 'map(select(.name == "'"$KSQLDB_NAME"'")) | .[].id')
+  ksqldb_id_found=$(confluent ksql cluster list -o json | jq -r 'map(select(.name == "'"$KSQLDB_NAME"'")) | .[].id')
   if [[ $ksqldb_id_found != "" ]]; then
     echo "Deleting KSQLDB: $KSQLDB_NAME : $ksqldb_id_found"
-    confluent ksql app delete $ksqldb_id_found &> "$REDIRECT_TO"
+    confluent ksql cluster delete $ksqldb_id_found &> "$REDIRECT_TO"
   fi
 
   # Delete connectors associated to this Kafka cluster, otherwise cluster deletion fails
@@ -1079,7 +1144,7 @@ function ccloud::destroy_ccloud_stack() {
   confluent api-key list --service-account $SERVICE_ACCOUNT_ID -o json | jq -r '.[].key' | xargs -I{} confluent api-key delete {}
 
   # Delete service account
-  confluent iam service-account delete $SERVICE_ACCOUNT_ID &>"$REDIRECT_TO" 
+  confluent iam service-account delete $SERVICE_ACCOUNT_ID &>"$REDIRECT_TO"
 
   if [[ $PRESERVE_ENVIRONMENT == "false" ]]; then
     local environment_id=$(confluent environment list -o json | jq -r 'map(select(.name | startswith("'"$ENVIRONMENT_NAME_PREFIX"'"))) | .[].id')
@@ -1090,7 +1155,7 @@ function ccloud::destroy_ccloud_stack() {
       confluent environment delete $environment_id &> "$REDIRECT_TO"
     fi
   fi
-  
+
   rm -f $CONFIG_FILE
 
   return 0
@@ -1164,10 +1229,7 @@ function ccloud::generate_configs() {
     echo "See https://docs.confluent.io/current/cloud/connect/auto-generate-configs.html for more information"
     return 1
   fi
-  
-  echo -e "\nGenerating component configurations from $CONFIG_FILE"
-  echo -e "\n(If you want to run any of these components to talk to Confluent Cloud, these are the configurations to add to the properties file for each component)"
-  
+
   # Set permissions
   PERM=600
   if ls --version 2>/dev/null | grep -q 'coreutils' ; then
@@ -1177,15 +1239,17 @@ function ccloud::generate_configs() {
     # BSD
     PERM=$(stat -f "%OLp" $CONFIG_FILE)
   fi
-  
+
   # Make destination
   DEST="delta_configs"
   mkdir -p $DEST
-  
+
+  echo -e "\nGenerating component configurations from $CONFIG_FILE and saving to the folder $DEST\n"
+
   ################################################################################
   # Glean parameters from the Confluent Cloud configuration file
   ################################################################################
-  
+
   # Kafka cluster
   BOOTSTRAP_SERVERS=$( grep "^bootstrap.server" $CONFIG_FILE | awk -F'=' '{print $2;}' )
   BOOTSTRAP_SERVERS=${BOOTSTRAP_SERVERS/\\/}
@@ -1194,16 +1258,23 @@ function ccloud::generate_configs() {
   SASL_JAAS_CONFIG_PROPERTY_FORMAT=${SASL_JAAS_CONFIG_PROPERTY_FORMAT/password\\=/password=}
   CLOUD_KEY=$( echo $SASL_JAAS_CONFIG | awk '{print $3}' | awk -F"'" '$0=$2' )
   CLOUD_SECRET=$( echo $SASL_JAAS_CONFIG | awk '{print $4}' | awk -F"'" '$0=$2' )
-  
+
   # Schema Registry
   BASIC_AUTH_CREDENTIALS_SOURCE=$( grep "^basic.auth.credentials.source" $CONFIG_FILE | awk -F'=' '{print $2;}' )
   SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO=$( grep "^basic.auth.user.info" $CONFIG_FILE | awk -F'=' '{print $2;}' )
   SCHEMA_REGISTRY_URL=$( grep "^schema.registry.url" $CONFIG_FILE | awk -F'=' '{print $2;}' )
-  
+
   # ksqlDB
   KSQLDB_ENDPOINT=$( grep "^ksql.endpoint" $CONFIG_FILE | awk -F'=' '{print $2;}' )
   KSQLDB_BASIC_AUTH_USER_INFO=$( grep "^ksql.basic.auth.user.info" $CONFIG_FILE | awk -F'=' '{print $2;}' )
-  
+
+  # These are optional if they exist in the configuration file
+  ENVIRONMENT_ID=$( grep "ENVIRONMENT_ID" $CONFIG_FILE | awk -F'=' 'END { if ($2) print $2; else print "-1" }')
+  SERVICE_ACCOUNT_ID=$( grep "SERVICE_ACCOUNT_ID" $CONFIG_FILE | awk -F'=' 'END { if ($2) print $2; else print "-1" }')
+  KAFKA_CLUSTER_ID=$( grep "KAFKA_CLUSTER_ID" $CONFIG_FILE | awk -F'=' 'END { if ($2) print $2; else print "-1" }')
+  SCHEMA_REGISTRY_CLUSTER_ID=$( grep "SCHEMA_REGISTRY_CLUSTER_ID" $CONFIG_FILE | awk -F'=' 'END { if ($2) print $2; else print "-1" }')
+  KSQLDB_APP_ID=$( grep "KSQLDB_APP_ID" $CONFIG_FILE | awk -F'=' 'END { if ($2) print $2; else print "-1" }')
+
   ################################################################################
   # Build configuration file with Confluent Cloud connection parameters and
   # Confluent Monitoring Interceptors for Streams Monitoring in Confluent Control Center
@@ -1248,14 +1319,11 @@ function ccloud::generate_configs() {
     fi
   done < "$CONFIG_FILE"
   chmod $PERM $INTERCEPTORS_CONFIG_FILE
-  
-  echo -e "\nConfluent Platform Components:"
-  
+
   ################################################################################
   # Confluent Schema Registry instance (local) for Confluent Cloud
   ################################################################################
   SR_CONFIG_DELTA=$DEST/schema-registry-ccloud.delta
-  echo "$SR_CONFIG_DELTA"
   rm -f $SR_CONFIG_DELTA
   while read -r line
   do
@@ -1266,12 +1334,11 @@ function ccloud::generate_configs() {
     fi
   done < "$CONFIG_FILE"
   chmod $PERM $SR_CONFIG_DELTA
-  
+
   ################################################################################
   # Confluent Replicator (executable) for Confluent Cloud
   ################################################################################
   REPLICATOR_PRODUCER_DELTA=$DEST/replicator-to-ccloud-producer.delta
-  echo "$REPLICATOR_PRODUCER_DELTA"
   rm -f $REPLICATOR_PRODUCER_DELTA
   cp $INTERCEPTORS_CONFIG_FILE $REPLICATOR_PRODUCER_DELTA
   echo -e "\n# Confluent Replicator (executable) specific configuration" >> $REPLICATOR_PRODUCER_DELTA
@@ -1280,12 +1347,11 @@ function ccloud::generate_configs() {
   REPLICATOR_SASL_JAAS_CONFIG=${REPLICATOR_SASL_JAAS_CONFIG//\\=/=}
   REPLICATOR_SASL_JAAS_CONFIG=${REPLICATOR_SASL_JAAS_CONFIG//\"/\\\"}
   chmod $PERM $REPLICATOR_PRODUCER_DELTA
-  
+
   ################################################################################
   # ksqlDB Server runs locally and connects to Confluent Cloud
   ################################################################################
   KSQLDB_SERVER_DELTA=$DEST/ksqldb-server-ccloud.delta
-  echo "$KSQLDB_SERVER_DELTA"
   rm -f $KSQLDB_SERVER_DELTA
   cp $INTERCEPTORS_CONFIG_FILE $KSQLDB_SERVER_DELTA
   echo -e "\n# ksqlDB Server specific configuration" >> $KSQLDB_SERVER_DELTA
@@ -1308,12 +1374,11 @@ function ccloud::generate_configs() {
     fi
   done < $CONFIG_FILE
   chmod $PERM $KSQLDB_SERVER_DELTA
-  
+
   ################################################################################
   # KSQL DataGen for Confluent Cloud
   ################################################################################
   KSQL_DATAGEN_DELTA=$DEST/ksql-datagen.delta
-  echo "$KSQL_DATAGEN_DELTA"
   rm -f $KSQL_DATAGEN_DELTA
   cp $INTERCEPTORS_CONFIG_FILE $KSQL_DATAGEN_DELTA
   echo -e "\n# KSQL DataGen specific configuration" >> $KSQL_DATAGEN_DELTA
@@ -1328,12 +1393,11 @@ function ccloud::generate_configs() {
     fi
   done < $CONFIG_FILE
   chmod $PERM $KSQL_DATAGEN_DELTA
-  
+
   ################################################################################
   # Confluent Control Center runs locally, monitors Confluent Cloud, and uses Confluent Cloud cluster as the backstore
   ################################################################################
   C3_DELTA=$DEST/control-center-ccloud.delta
-  echo "$C3_DELTA"
   rm -f $C3_DELTA
   echo -e "\n# Confluent Control Center specific configuration" >> $C3_DELTA
   while read -r line
@@ -1360,12 +1424,11 @@ function ccloud::generate_configs() {
     fi
   done < $CONFIG_FILE
   chmod $PERM $C3_DELTA
-  
+
   ################################################################################
   # Confluent Metrics Reporter to Confluent Cloud
   ################################################################################
   METRICS_REPORTER_DELTA=$DEST/metrics-reporter.delta
-  echo "$METRICS_REPORTER_DELTA"
   rm -f $METRICS_REPORTER_DELTA
   echo "metric.reporters=io.confluent.metrics.reporter.ConfluentMetricsReporter" >> $METRICS_REPORTER_DELTA
   echo "confluent.metrics.reporter.topic.replicas=3" >> $METRICS_REPORTER_DELTA
@@ -1378,12 +1441,11 @@ function ccloud::generate_configs() {
     fi
   done < "$CONFIG_FILE"
   chmod $PERM $METRICS_REPORTER_DELTA
-  
+
   ################################################################################
   # Confluent REST Proxy to Confluent Cloud
   ################################################################################
   REST_PROXY_DELTA=$DEST/rest-proxy.delta
-  echo "$REST_PROXY_DELTA"
   rm -f $REST_PROXY_DELTA
   while read -r line
     do
@@ -1404,12 +1466,11 @@ function ccloud::generate_configs() {
     fi
   done < $CONFIG_FILE
   chmod $PERM $REST_PROXY_DELTA
-  
+
   ################################################################################
   # Kafka Connect runs locally and connects to Confluent Cloud
   ################################################################################
   CONNECT_DELTA=$DEST/connect-ccloud.delta
-  echo "$CONNECT_DELTA"
   rm -f $CONNECT_DELTA
   cat <<EOF > $CONNECT_DELTA
 # Configuration for embedded admin client
@@ -1431,9 +1492,9 @@ EOF
       fi
     fi
   done < "$CONFIG_FILE"
-  
+
   for prefix in "producer" "consumer" "producer.confluent.monitoring.interceptor" "consumer.confluent.monitoring.interceptor" ; do
-  
+
   echo -e "\n# Configuration for embedded $prefix" >> $CONNECT_DELTA
   while read -r line
     do
@@ -1446,10 +1507,10 @@ EOF
       fi
     fi
   done < "$CONFIG_FILE"
-  
+
   done
-  
-  
+
+
   cat <<EOF >> $CONNECT_DELTA
 
 # Confluent Schema Registry for Kafka Connect
@@ -1459,12 +1520,11 @@ value.converter.schema.registry.basic.auth.user.info=$SCHEMA_REGISTRY_BASIC_AUTH
 value.converter.schema.registry.url=$SCHEMA_REGISTRY_URL
 EOF
   chmod $PERM $CONNECT_DELTA
-  
+
   ################################################################################
   # Kafka connector
   ################################################################################
   CONNECTOR_DELTA=$DEST/connector-ccloud.delta
-  echo "$CONNECTOR_DELTA"
   rm -f $CONNECTOR_DELTA
   cat <<EOF >> $CONNECTOR_DELTA
 // Confluent Schema Registry for Kafka connectors
@@ -1474,26 +1534,22 @@ value.converter.schema.registry.basic.auth.user.info=$SCHEMA_REGISTRY_BASIC_AUTH
 value.converter.schema.registry.url=$SCHEMA_REGISTRY_URL
 EOF
   chmod $PERM $CONNECTOR_DELTA
-  
+
   ################################################################################
   # AK command line tools
   ################################################################################
   AK_TOOLS_DELTA=$DEST/ak-tools-ccloud.delta
-  echo "$AK_TOOLS_DELTA"
   rm -f $AK_TOOLS_DELTA
   cp $CONFIG_FILE $AK_TOOLS_DELTA
   chmod $PERM $AK_TOOLS_DELTA
-  
-  
-  echo -e "\nKafka Clients:"
-  
+
+
   ################################################################################
   # Java (Producer/Consumer)
   ################################################################################
   JAVA_PC_CONFIG=$DEST/java_producer_consumer.delta
-  echo "$JAVA_PC_CONFIG"
   rm -f $JAVA_PC_CONFIG
-  
+
   cat <<EOF >> $JAVA_PC_CONFIG
 import java.util.Properties;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -1535,14 +1591,13 @@ props.put(ConsumerConfig.INTERCEPTOR_CLASSES_CONFIG + SaslConfigs.SASL_JAAS_CONF
 // .... additional configuration settings
 EOF
   chmod $PERM $JAVA_PC_CONFIG
-  
+
   ################################################################################
   # Java (Streams)
   ################################################################################
   JAVA_STREAMS_CONFIG=$DEST/java_streams.delta
-  echo "$JAVA_STREAMS_CONFIG"
   rm -f $JAVA_STREAMS_CONFIG
-  
+
   cat <<EOF >> $JAVA_STREAMS_CONFIG
 import java.util.Properties;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -1585,14 +1640,13 @@ props.put(StreamsConfig.CONSUMER_PREFIX + ConsumerConfig.INTERCEPTOR_CLASSES_CON
 // .... additional configuration settings
 EOF
   chmod $PERM $JAVA_STREAMS_CONFIG
-  
+
   ################################################################################
   # librdkafka
   ################################################################################
   LIBRDKAFKA_CONFIG=$DEST/librdkafka.delta
-  echo "$LIBRDKAFKA_CONFIG"
   rm -f $LIBRDKAFKA_CONFIG
-  
+
   cat <<EOF >> $LIBRDKAFKA_CONFIG
 bootstrap.servers="$BOOTSTRAP_SERVERS"
 security.protocol=SASL_SSL
@@ -1603,14 +1657,13 @@ schema.registry.url="$SCHEMA_REGISTRY_URL"
 basic.auth.user.info="$SCHEMA_REGISTRY_BASIC_AUTH_USER_INFO"
 EOF
   chmod $PERM $LIBRDKAFKA_CONFIG
-  
+
   ################################################################################
   # Python
   ################################################################################
   PYTHON_CONFIG=$DEST/python.delta
-  echo "$PYTHON_CONFIG"
   rm -f $PYTHON_CONFIG
-  
+
   cat <<EOF >> $PYTHON_CONFIG
 from confluent_kafka import Producer, Consumer, KafkaError
 
@@ -1641,14 +1694,13 @@ consumer = Consumer({
 })
 EOF
   chmod $PERM $PYTHON_CONFIG
-  
+
   ################################################################################
-  # .NET 
+  # .NET
   ################################################################################
   DOTNET_CONFIG=$DEST/dotnet.delta
-  echo "$DOTNET_CONFIG"
   rm -f $DOTNET_CONFIG
-  
+
   cat <<EOF >> $DOTNET_CONFIG
 using Confluent.Kafka;
 
@@ -1681,19 +1733,18 @@ var consumerConfig = new Dictionary<string, object>
 };
 EOF
   chmod $PERM $DOTNET_CONFIG
-  
+
   ################################################################################
   # Go
   ################################################################################
   GO_CONFIG=$DEST/go.delta
-  echo "$GO_CONFIG"
   rm -f $GO_CONFIG
-  
+
   cat <<EOF >> $GO_CONFIG
 import (
   "github.com/confluentinc/confluent-kafka-go/kafka"
-  
- 
+
+
 producer, err := kafka.NewProducer(&kafka.ConfigMap{
            "bootstrap.servers": "$BOOTSTRAP_SERVERS",
           "broker.version.fallback": "0.10.0.0",
@@ -1706,7 +1757,7 @@ producer, err := kafka.NewProducer(&kafka.ConfigMap{
                  "plugin.library.paths": "monitoring-interceptor",
                  // .... additional configuration settings
                  })
- 
+
 consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
      "bootstrap.servers": "$BOOTSTRAP_SERVERS",
        "broker.version.fallback": "0.10.0.0",
@@ -1722,14 +1773,13 @@ consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
                  })
 EOF
   chmod $PERM $GO_CONFIG
-  
+
   ################################################################################
   # Node.js
   ################################################################################
   NODE_CONFIG=$DEST/node.delta
-  echo "$NODE_CONFIG"
   rm -f $NODE_CONFIG
-  
+
   cat <<EOF >> $NODE_CONFIG
 var Kafka = require('node-rdkafka');
 
@@ -1760,14 +1810,13 @@ var consumer = Kafka.KafkaConsumer.createReadStream({
 });
 EOF
   chmod $PERM $NODE_CONFIG
-  
+
   ################################################################################
   # C++
   ################################################################################
   CPP_CONFIG=$DEST/cpp.delta
-  echo "$CPP_CONFIG"
   rm -f $CPP_CONFIG
-  
+
   cat <<EOF >> $CPP_CONFIG
 #include <librdkafka/rdkafkacpp.h>
 
@@ -1802,14 +1851,13 @@ if (consumerConfig->set("metadata.broker.list", "$BOOTSTRAP_SERVERS", errstr) !=
 RdKafka::Consumer *consumer = RdKafka::Consumer::create(consumerConfig, errstr);
 EOF
   chmod $PERM $CPP_CONFIG
-  
+
   ################################################################################
   # ENV
   ################################################################################
   ENV_CONFIG=$DEST/env.delta
-  echo "$ENV_CONFIG"
   rm -f $ENV_CONFIG
-  
+
   cat <<EOF >> $ENV_CONFIG
 export BOOTSTRAP_SERVERS="$BOOTSTRAP_SERVERS"
 export SASL_JAAS_CONFIG="$SASL_JAAS_CONFIG"
@@ -1822,6 +1870,11 @@ export CLOUD_KEY="$CLOUD_KEY"
 export CLOUD_SECRET="$CLOUD_SECRET"
 export KSQLDB_ENDPOINT="$KSQLDB_ENDPOINT"
 export KSQLDB_BASIC_AUTH_USER_INFO="$KSQLDB_BASIC_AUTH_USER_INFO"
+export ENVIRONMENT_ID="$ENVIRONMENT_ID"
+export SERVICE_ACCOUNT_ID="$SERVICE_ACCOUNT_ID"
+export KAFKA_CLUSTER_ID="$KAFKA_CLUSTER_ID"
+export SCHEMA_REGISTRY_CLUSTER_ID="$SCHEMA_REGISTRY_CLUSTER_ID"
+export KSQLDB_APP_ID="$KSQLDB_APP_ID"
 EOF
   chmod $PERM $ENV_CONFIG
 
@@ -1829,9 +1882,9 @@ EOF
 }
 
 ##############################################
-# These are some duplicate functions from 
-#  helper.sh to decouple the script files.  In 
-#  the future we can work to remove this 
+# These are some duplicate functions from
+#  helper.sh to decouple the script files.  In
+#  the future we can work to remove this
 #  duplication if necessary
 ##############################################
 function ccloud::retry() {
@@ -1855,6 +1908,6 @@ function ccloud::retry() {
     done
     printf "\n"
 }
-function ccloud::version_gt() { 
+function ccloud::version_gt() {
   test "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1";
 }

@@ -48,6 +48,8 @@ Currently uses (i.e. tested with):
 * CP 6.2.0 (self managed Connect worker)
 * Connectors:
   * confluentinc/kafka-connect-elasticsearch:11.0.6
+* Confluent CLI 2.16.0
+* ccloud-library and helper.sh 7.1.1 from https://github.com/confluentinc/examples/tree/7.1.1-post/utils
 
 [1]: https://digitransit.fi/en/developers/apis/4-realtime-api/vehicle-positions/ "https://digitransit.fi/en/developers/apis/4-realtime-api/vehicle-positions/"
 [2]: ./start.sh#L7-L8 "start.sh"
